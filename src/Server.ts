@@ -50,26 +50,36 @@ export class Server {
     })
   }
 
+  getPlayersJSON(){
+    return JSON.stringify({
+      method: 'onGetPlayers',
+      data: Object.values(this.players).map( 
+        pl => ({
+          id: pl.playerId,
+          name: pl.playerName
+        }) 
+      )
+    })
+  }
+
+  getRoomsJSON(){
+    return JSON.stringify({
+      method: 'onGetRooms',
+      data: Object.values(this.rooms).map(
+        r => ({
+          id: r.roomId,
+          players: r.playersId
+        })
+      )
+    })
+  }
+
   onGetMessage(pl:Player, msg:any){
     switch(msg.method){
       case "getRooms":
-        pl.ws.send(JSON.stringify({
-          method: 'onGetRooms',
-          data: Object.values(this.rooms).map(r => ({
-            id: r.roomId,
-            players: r.playersId
-          }))
-        }))
-        return
+        pl.ws.send(this.getRoomsJSON())
       case "getPlayers":
-        pl.ws.send(JSON.stringify({
-          method: 'onGetPlayers',
-          data: Object.values(this.players).map( pl => ({
-            id: pl.playerId,
-            name: pl.playerName
-          }) )
-        }))
-        return
+        pl.ws.send(this.getPlayersJSON())
     }
   }
 

@@ -19,6 +19,9 @@ export class Server {
   public rooms:roomsObj = {}
 
   constructor(){
+    this.rooms["testRoom"] = new Room("testRoom")
+    this.rooms["testRoom"].playerIds = ["testPlayer"]
+
     this.wsServer = new WebSocket.Server({ port: 8080 })
 
     this.wsServer.on('connection', (ws, req) => {
@@ -68,7 +71,7 @@ export class Server {
       data: Object.values(this.rooms).map(
         r => ({
           id: r.roomId,
-          players: r.playersId
+          players: r.playerIds
         })
       )
     })
@@ -78,8 +81,10 @@ export class Server {
     switch(msg.method){
       case "getRooms":
         pl.ws.send(this.getRoomsJSON())
+        return
       case "getPlayers":
         pl.ws.send(this.getPlayersJSON())
+        return
     }
   }
 

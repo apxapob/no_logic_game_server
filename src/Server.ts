@@ -19,9 +19,6 @@ export class Server {
   public rooms:roomsObj = {}
 
   constructor(){
-    this.rooms["testRoom"] = new Room("testRoom")
-    this.rooms["testRoom"].playerIds = ["testPlayer"]
-
     this.wsServer = new WebSocket.Server({ port: 8080 })
 
     this.wsServer.on('connection', (ws, req) => {
@@ -46,7 +43,6 @@ export class Server {
         })
         ws.on('close', () => {
           console.log('connection closed')
-          console.log('@@@', ws.readyState)
         })
       }
       
@@ -68,12 +64,8 @@ export class Server {
   getRoomsJSON(){
     return JSON.stringify({
       method: 'onGetRooms',
-      data: Object.values(this.rooms).map(
-        r => ({
-          id: r.roomId,
-          players: r.playerIds
-        })
-      )
+      data: Object.values(this.rooms)
+                  .map(r => r.toNetObject())
     })
   }
 
@@ -85,7 +77,21 @@ export class Server {
       case "getPlayers":
         pl.ws.send(this.getPlayersJSON())
         return
+      case "createRoom":
+        const newRoom = new Room(msg.data, pl.playerId);
+        this.rooms[newRoom.roomId] = newRoom;
+        this.broadcast({
+          method: 'roomCreated',
+          data: newRoom.toNetObject()
+        })
+        return
     }
+  }
+
+  broadcast(msg:any){
+    this.wsServer.clients.forEach(
+      ws => ws.send( JSON.stringify(msg) )
+    )
   }
 
   authPlayer(ws:WebSocket, url:string):Player | null {

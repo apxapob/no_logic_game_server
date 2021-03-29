@@ -22,30 +22,22 @@ export class Server {
     this.wsServer = new WebSocket.Server({ port: 8080 })
 
     this.wsServer.on('connection', (ws, req) => {
-      const pl = this.authPlayer(ws, req.url || '')
+      const pl = this.registerPlayer(ws, req.url || '')
 
-      if(!pl){
-        console.log('someone connected', req.url)
-        ws.send(JSON.stringify({
-          method: 'message',
-          data: `Wrong login params`
-        }))
-        ws.close()
-      } else {
-        ws.on('message', message => {
-          console.log(`Received message => ${message}`)
-          
-          const msg = JSON.parse(message.toString())
-          this.onGetMessage(pl, msg)
-        })
-        ws.on('error', e => {
-          console.log('socket error', e)
-        })
-        ws.on('close', () => {
-          console.log('connection closed')
-        })
-      }
-      
+      ws.on('message', message => {
+        console.log(`Received message => ${message}`)
+        
+        const msg = JSON.parse(message.toString())
+        this.onGetMessage(pl, msg)
+      })
+      ws.on('error', e => {
+        console.log('socket error', e)
+      })
+      ws.on('close', () => {
+        //TODO: remove player from rooms
+        delete this.players[pl.playerId]
+        console.log(pl.playerName + ' disconnected')
+      })
     })
   }
 
@@ -74,11 +66,14 @@ export class Server {
       case "getRooms":
         pl.ws.send(this.getRoomsJSON())
         return
+      case "enterRoom":
+        this.enterRoom(pl, msg.data.id, msg.data.password);
+        return
       case "getPlayers":
         pl.ws.send(this.getPlayersJSON())
         return
       case "createRoom":
-        const newRoom = new Room(msg.data, pl.playerId);
+        const newRoom = new Room(msg.data.name, pl.playerId, msg.data.maxPlayers, msg.data.password);
         this.rooms[newRoom.roomId] = newRoom;
         this.broadcast({
           method: 'roomCreated',
@@ -94,30 +89,35 @@ export class Server {
     )
   }
 
-  authPlayer(ws:WebSocket, url:string):Player | null {
-    //url: /?player=apxapob&token=abc
-    const loginParams = new URLSearchParams(url.substr(1))
-    const playerName = loginParams.get("player")
-    const token = loginParams.get("token")
-    if(!playerName || !token){ return null }
-
-    let pl:Player = this.players[token]
-    
-    if(pl){
-      ws.send(JSON.stringify({
-        method: 'message',
-        data: `Hi again, ${playerName}!`
-      }))
-      pl.ws = ws
-    } else {
-      pl = new Player(playerName, token, ws)
-      this.players[token] = pl
-      ws.send(JSON.stringify({
-        method: 'message',
-        data: `Hi, ${playerName}!`
-      }))
+  enterRoom(pl:Player, roomId:string, password:string|null){
+    const r:Room = this.rooms[roomId]
+    if(!r){
+      pl.ws.send(
+        JSON.stringify({
+          method: 'error',
+          data: { text: 'No such room', code: "no_room" }
+        })
+      )
+      return
     }
-    console.log('connected', pl.playerName)
+    r.addPlayer(pl, password)
+  }
+
+  registerPlayer(ws:WebSocket, url:string):Player {
+    //url: /?name=apxapob
+    const loginParams = new URLSearchParams(url.substr(1))
+    const name = loginParams.get("name") || "Player"
+    
+    let pl = new Player(name, ws)
+    this.players[pl.playerId] = pl
+
+    ws.send(
+      JSON.stringify({
+        method: 'accountCreated',
+        data: { name: pl.playerName, id: pl.playerId }
+      })
+    )
+
     return pl
   }
 

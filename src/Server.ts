@@ -11,6 +11,7 @@ type roomsObj = {
 };
 
 export class Server {
+  public static instance:Server
   
   private wsServer:WebSocket.Server
 
@@ -19,6 +20,7 @@ export class Server {
   public rooms:roomsObj = {}
 
   constructor(){
+    Server.instance = this
     this.wsServer = new WebSocket.Server({ port: 8080 })
 
     this.wsServer.on('connection', (ws, req) => {
@@ -34,7 +36,8 @@ export class Server {
         console.log('socket error', e)
       })
       ws.on('close', () => {
-        //TODO: remove player from rooms
+        this.onLeaveRoom(pl)
+        
         delete this.players[pl.playerId]
         console.log(pl.playerName + ' disconnected')
       })
@@ -61,6 +64,13 @@ export class Server {
     })
   }
 
+  onLeaveRoom(pl:Player){
+    if(pl.roomId){
+      const room = this.rooms[pl.roomId]
+      if(room){ room.removePlayer(pl) }
+    }
+  }
+
   onGetMessage(pl:Player, msg:any){
     switch(msg.method){
       case "getRooms":
@@ -68,6 +78,9 @@ export class Server {
         return
       case "enterRoom":
         this.enterRoom(pl, msg.data.id, msg.data.password);
+        return
+      case "leaveRoom":
+        this.onLeaveRoom(pl)
         return
       case "getPlayers":
         pl.ws.send(this.getPlayersJSON())

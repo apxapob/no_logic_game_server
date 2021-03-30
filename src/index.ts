@@ -2,6 +2,6 @@ import { Server } from "./Server"
 
 console.clear()
 
-let s = new Server()
+let serverInstance = new Server()
 console.log("server started")
 

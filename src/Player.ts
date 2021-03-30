@@ -11,6 +11,7 @@ export class Player {
   public playerId:string = ''
   public playerName:string = ''
   public ws:WebSocket
+  public roomId:string|null = null
 
   constructor(name:string, ws:WebSocket){
     this.playerName = name

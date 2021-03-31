@@ -47,12 +47,8 @@ export class Server {
   getPlayersJSON(){
     return JSON.stringify({
       method: 'onGetPlayers',
-      data: Object.values(this.players).map( 
-        pl => ({
-          id: pl.playerId,
-          name: pl.playerName
-        }) 
-      )
+      data: Object.values(this.players)
+                  .map(pl => pl.toNetObject())
     })
   }
 
@@ -88,6 +84,7 @@ export class Server {
       case "createRoom":
         const newRoom = new Room(msg.data.name, pl.playerId, msg.data.maxPlayers, msg.data.password);
         this.rooms[newRoom.roomId] = newRoom;
+        this.enterRoom(pl, newRoom.roomId, newRoom.password);
         this.broadcast({
           method: 'roomCreated',
           data: newRoom.toNetObject()

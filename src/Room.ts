@@ -49,6 +49,18 @@ export class Room {
       method: 'playerLeft',
       data: pl.playerId
     })
+
+    if(this.ownerId !== pl.playerId){ return }
+    
+    if(this.playerIds.length > 0){
+      this.ownerId = this.playerIds[0]
+      this.sendToRoom({
+        method: 'newRoomOwner',
+        data: this.ownerId
+      })
+    } else {
+      delete Server.instance.rooms[this.roomId]
+    }
   }
 
   addPlayer(pl:Player, password:string|null){

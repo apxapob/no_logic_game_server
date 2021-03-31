@@ -18,4 +18,11 @@ export class Player {
     this.ws = ws
     this.playerId = generateUID()
   }
+
+  toNetObject() {
+    return {
+      id: this.playerId,
+      name: this.playerName,
+    }
+  }
 }

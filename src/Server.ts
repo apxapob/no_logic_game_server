@@ -81,6 +81,14 @@ export class Server {
       case "getPlayers":
         pl.ws.send(this.getPlayersJSON())
         return
+      case"sendChatMsg":
+        const r = this.rooms[pl.roomId || ""]
+        if(!r) return
+        r.sendToRoom({
+          method: 'chatMsg',
+          data: { text: msg.data, from: pl.playerId }
+        })
+        return
       case "createRoom":
         const newRoom = new Room(msg.data.name, pl.playerId, msg.data.maxPlayers, msg.data.password);
         this.rooms[newRoom.roomId] = newRoom;

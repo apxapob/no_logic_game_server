@@ -41,6 +41,7 @@ export class Room {
   }
 
   removePlayer(pl:Player){
+    pl.roomId = null;
     const playerIdx = this.playerIds.indexOf(pl.playerId)
     if(playerIdx === -1){ return }
 

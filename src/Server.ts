@@ -44,11 +44,17 @@ export class Server {
     })
   }
 
-  getPlayersJSON(){
+  getPlayersJSON(playerIds:Array<string>){
+    let arr = Object.values(this.players)
+                    .map(pl => pl.toNetObject())
+    if(playerIds.length > 0){
+      arr = arr.filter(
+        pl => playerIds.includes(pl.id)
+      )
+    }
     return JSON.stringify({
       method: 'onGetPlayers',
-      data: Object.values(this.players)
-                  .map(pl => pl.toNetObject())
+      data: arr
     })
   }
 
@@ -79,7 +85,7 @@ export class Server {
         this.onLeaveRoom(pl)
         return
       case "getPlayers":
-        pl.ws.send(this.getPlayersJSON())
+        pl.ws.send(this.getPlayersJSON(msg.data || []))
         return
       case"sendChatMsg":
         const r = this.rooms[pl.roomId || ""]

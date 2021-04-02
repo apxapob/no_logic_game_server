@@ -45,7 +45,7 @@ export class Room {
     const playerIdx = this.playerIds.indexOf(pl.playerId)
     if(playerIdx === -1){ return }
 
-    this.playerIds.splice(playerIdx)
+    this.playerIds.splice(playerIdx, 1)
     this.sendToRoom({
       method: 'playerLeft',
       data: pl.playerId

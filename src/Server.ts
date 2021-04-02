@@ -1,5 +1,6 @@
 import WebSocket from "ws"
 import { Lobby } from "./Lobby"
+import { MessageHandler } from "./MessageHandler";
 import { Player } from "./Player"
 import { Room } from "./Room"
 
@@ -27,7 +28,7 @@ export class Server {
       const pl = this.registerPlayer(ws, req.url || '')
 
       ws.on('message', message => {
-        console.log(`Received message => ${message}`)
+        console.log(`${pl.playerName}: ${message}`)
         
         const msg = JSON.parse(message.toString())
         this.onGetMessage(pl, msg)
@@ -44,28 +45,6 @@ export class Server {
     })
   }
 
-  getPlayersJSON(playerIds:Array<string>){
-    let arr = Object.values(this.players)
-                    .map(pl => pl.toNetObject())
-    if(playerIds.length > 0){
-      arr = arr.filter(
-        pl => playerIds.includes(pl.id)
-      )
-    }
-    return JSON.stringify({
-      method: 'onGetPlayers',
-      data: arr
-    })
-  }
-
-  getRoomsJSON(){
-    return JSON.stringify({
-      method: 'onGetRooms',
-      data: Object.values(this.rooms)
-                  .map(r => r.toNetObject())
-    })
-  }
-
   onLeaveRoom(pl:Player){
     if(pl.roomId){
       const room = this.rooms[pl.roomId]
@@ -74,42 +53,18 @@ export class Server {
   }
 
   onGetMessage(pl:Player, msg:any){
-    switch(msg.method){
-      case "getRooms":
-        pl.ws.send(this.getRoomsJSON())
-        return
-      case "enterRoom":
-        this.enterRoom(pl, msg.data.id, msg.data.password);
-        return
-      case "leaveRoom":
-        this.onLeaveRoom(pl)
-        return
-      case "getPlayers":
-        pl.ws.send(this.getPlayersJSON(msg.data || []))
-        return
-      case"sendChatMsg":
-        const r = this.rooms[pl.roomId || ""]
-        if(!r) return
-        r.sendToRoom({
-          method: 'chatMsg',
-          data: { text: msg.data, from: pl.playerId }
-        })
-        return
-      case "createRoom":
-        const newRoom = new Room(msg.data.name, pl.playerId, msg.data.maxPlayers, msg.data.password);
-        this.rooms[newRoom.roomId] = newRoom;
-        this.enterRoom(pl, newRoom.roomId, newRoom.password);
-        this.broadcast({
-          method: 'roomCreated',
-          data: newRoom.toNetObject()
-        })
-        return
+    const handler = MessageHandler[msg.method]
+    if(handler){
+      handler(pl, msg.data)
+    } else {
+      console.log("unknown message")
     }
   }
 
   broadcast(msg:any){
+    const json = JSON.stringify(msg)
     this.wsServer.clients.forEach(
-      ws => ws.send( JSON.stringify(msg) )
+      ws => ws.send(json)
     )
   }
 

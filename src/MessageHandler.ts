@@ -6,31 +6,24 @@ type handlerObj = {
   [key: string]: (pl:Player, data:any) => void;
 };
 
-const getRoomsJSON = () => JSON.stringify({
+const getRoomsJSON = () => ({
   method: 'onGetRooms',
   data: Object.values(Server.instance.rooms)
               .map(r => r.toNetObject())
 })
 
-const getPlayersJSON = (playerIds:Array<string>) => {
-  let arr = Object.values(Server.instance.players)
-                  .map(pl => pl.toNetObject())
-  if(playerIds.length > 0){
-    arr = arr.filter(
-      pl => playerIds.includes(pl.id)
-    )
-  }
-  return JSON.stringify({
-    method: 'onGetPlayers',
-    data: arr
-  })
-}
+const getPlayersJSON = (playerIds:Array<string>) => ({
+  method: 'onGetPlayers',
+  data: Object.values(Server.instance.players)
+              .map(pl => pl.toNetObject())
+              .filter(pl => playerIds.includes(pl.id))
+})
 
 export const MessageHandler:handlerObj = {
-  getRooms: (pl:Player) => pl.ws.send(getRoomsJSON()),
+  getRooms: (pl:Player) => pl.send(getRoomsJSON()),
   enterRoom: (pl:Player, data:any) => Server.instance.enterRoom(pl, data.id, data.password),
   leaveRoom: (pl:Player) => Server.instance.onLeaveRoom(pl),
-  getPlayers: (pl:Player, data:any) => pl.ws.send(getPlayersJSON(data || [])),
+  getPlayers: (pl:Player, data:any) => pl.send(getPlayersJSON(data || [])),
   sendChatMsg: (pl:Player, data:any) => {
     const r = Server.instance.rooms[pl.roomId || ""]
     if(!r) return

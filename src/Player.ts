@@ -7,16 +7,28 @@ const generateUID = () => {
   })
 }
 
+type WSMessage = {
+  method: string;
+  data?: number | string | object;
+};
+
 export class Player {
   public playerId:string = ''
   public playerName:string = ''
-  public ws:WebSocket
+  public ws:WebSocket|null
   public roomId:string|null = null
 
   constructor(name:string, ws:WebSocket){
     this.playerName = name
     this.ws = ws
     this.playerId = generateUID()
+  }
+
+  send(msg:WSMessage){
+    this.ws?.send( JSON.stringify(msg) )
+  }
+  sendString(msg:String){
+    this.ws?.send(msg)
   }
 
   toNetObject() {

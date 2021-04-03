@@ -27,6 +27,8 @@ export class Server {
     this.wsServer.on('connection', (ws, req) => {
       const pl = this.registerPlayer(ws, req.url || '')
 
+      pl.send({ method: 'onConnected', data: 1 })
+
       ws.on('message', message => {
         console.log(`${pl.playerName}: ${message}`)
         
@@ -39,7 +41,7 @@ export class Server {
       ws.on('close', () => {
         this.onLeaveRoom(pl)
         
-        delete this.players[pl.playerId]
+        pl.ws = null
         console.log(pl.playerName + ' disconnected')
       })
     })
@@ -71,12 +73,10 @@ export class Server {
   enterRoom(pl:Player, roomId:string, password:string|null){
     const r:Room = this.rooms[roomId]
     if(!r){
-      pl.ws.send(
-        JSON.stringify({
-          method: 'error',
-          data: { text: 'No such room', code: "no_room" }
-        })
-      )
+      pl.send({
+        method: 'error',
+        data: { text: 'No such room', code: "no_room" }
+      })
       return
     }
     r.addPlayer(pl, password)
@@ -90,12 +90,10 @@ export class Server {
     let pl = new Player(name, ws)
     this.players[pl.playerId] = pl
 
-    ws.send(
-      JSON.stringify({
-        method: 'accountCreated',
-        data: { name: pl.playerName, id: pl.playerId }
-      })
-    )
+    pl.send({
+      method: 'accountCreated',
+      data: { name: pl.playerName, id: pl.playerId }
+    })
 
     return pl
   }

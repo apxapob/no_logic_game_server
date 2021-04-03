@@ -7,6 +7,10 @@ const generateUID = () => {
   })
 }
 
+const generatePassword = () => 'xxxxxxxxxxxxxxxx'.replace(/x/g, 
+  c => (Math.random() * 36 | 0).toString(36)
+)
+
 type WSMessage = {
   method: string;
   data?: number | string | object;
@@ -15,13 +19,15 @@ type WSMessage = {
 export class Player {
   public playerId:string = ''
   public playerName:string = ''
+  public password:string = ''
   public ws:WebSocket|null
   public roomId:string|null = null
 
-  constructor(name:string, ws:WebSocket){
+  constructor(name:string, id:string|null, password:string|null, ws:WebSocket){
     this.playerName = name
     this.ws = ws
-    this.playerId = generateUID()
+    this.playerId = id || generateUID()
+    this.password = password || generatePassword()
   }
 
   send(msg:WSMessage){

@@ -26,6 +26,13 @@ export class Server {
 
     this.wsServer.on('connection', (ws, req) => {
       const pl = this.registerPlayer(ws, req.url || '')
+      if(pl === null){
+        ws.send(
+          JSON.stringify({ method: 'wrongPassword' })
+        )
+        ws.close()
+        return
+      }
 
       pl.send({ method: 'onConnected', data: 1 })
 
@@ -82,20 +89,35 @@ export class Server {
     r.addPlayer(pl, password)
   }
 
-  registerPlayer(ws:WebSocket, url:string):Player {
-    //url: /?name=apxapob
+  registerPlayer(ws:WebSocket, url:string):Player|null {
     const loginParams = new URLSearchParams(url.substr(1))
     const name = loginParams.get("name") || "Player"
+    const id = loginParams.get("id")
+    const password = loginParams.get("password")
     
-    let pl = new Player(name, ws)
-    this.players[pl.playerId] = pl
-
-    pl.send({
-      method: 'accountCreated',
-      data: { name: pl.playerName, id: pl.playerId }
-    })
-
-    return pl
+    if(!id){
+      const pl = new Player(name, null, null, ws)
+      pl.send({
+        method: 'accountCreated',
+        data: { name: pl.playerName, id: pl.playerId, password: pl.password }
+      })
+      this.players[pl.playerId] = pl
+      return pl
+    } 
+      
+    const oldPlayer = this.players[id]
+    if(oldPlayer){
+      if(oldPlayer.password === password) {
+        oldPlayer.playerName = name
+        oldPlayer.ws = ws
+        return oldPlayer
+      }
+      return null
+    } 
+    
+    const newPlayer = new Player(name, id, password, ws)
+    this.players[newPlayer.playerId] = newPlayer
+    return newPlayer
   }
 
 }

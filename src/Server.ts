@@ -34,7 +34,7 @@ export class Server {
         return
       }
 
-      pl.send({ method: 'onConnected', data: 1 })
+      pl.send({ method: 'onConnected', data: this.wsServer.clients.size })
 
       ws.on('message', message => {
         console.log(`${pl.playerName}: ${message}`)

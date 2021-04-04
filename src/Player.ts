@@ -11,7 +11,7 @@ const generatePassword = () => 'xxxxxxxxxxxxxxxx'.replace(/x/g,
   c => (Math.random() * 36 | 0).toString(36)
 )
 
-type WSMessage = {
+export type WSMessage = {
   method: string;
   data?: number | string | object;
 };

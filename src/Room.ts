@@ -1,5 +1,5 @@
 import { Server } from "./Server";
-import { Player } from "./Player";
+import { Player, WSMessage } from "./Player";
 
 export class Room {
   public roomId:string = ''
@@ -29,7 +29,7 @@ export class Room {
     }
   }
 
-  sendToRoom(msg:any){
+  sendToRoom(msg:WSMessage){
     const json = JSON.stringify(msg)
     this.playerIds.forEach(plId => {
       const player = Server.instance.players[plId]

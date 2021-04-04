@@ -21,6 +21,15 @@ const getPlayersJSON = (playerIds:Array<string>) => ({
 
 export const MessageHandler:handlerObj = {
   getRooms: (pl:Player) => pl.send(getRoomsJSON()),
+  changeName: (pl:Player, data:any) => {
+    pl.playerName = data
+    const r = Server.instance.rooms[pl.roomId || ""]
+    if(!r) return
+    r.sendToRoom({
+      method: 'nameChanged',
+      data: { name: pl.playerName, id: pl.playerId }
+    })
+  },
   enterRoom: (pl:Player, data:any) => Server.instance.enterRoom(pl, data.id, data.password),
   leaveRoom: (pl:Player) => Server.instance.onLeaveRoom(pl),
   getPlayers: (pl:Player, data:any) => pl.send(getPlayersJSON(data || [])),

@@ -8,6 +8,7 @@ export class Room {
   public password:string|null = null
   public maxPlayers = 6
   public playerIds:Array<string> = []
+  public gameStarted:boolean = false
 
   constructor(name:string, ownerId:string, maxPlayers = -1, password = null){
     this.roomId = Date.now().toString()
@@ -25,7 +26,8 @@ export class Room {
       ownerId: this.ownerId,
       name: this.roomName,
       players: this.playerIds,
-      maxPlayers: this.maxPlayers
+      maxPlayers: this.maxPlayers,
+      gameStarted: this.gameStarted
     }
   }
 
@@ -35,6 +37,29 @@ export class Room {
       const player = Server.instance.players[plId]
       if(player){player.sendString(json)}
     })
+  }
+
+  startGame(starter:Player){
+    if(starter.playerId != this.ownerId){ 
+      starter.send({
+        method: 'error',
+        data: { text: 'You can\'t start game in this room', code: "not_room_owner" }
+      })
+      return 
+    }
+    if(this.gameStarted){ 
+      starter.send({
+        method: 'error',
+        data: { text: 'The game already started', code: "already_started" }
+      })
+      return 
+    }
+    this.gameStarted = true
+    this.sendToRoom({ method: 'gameStarted' })
+  }
+
+  playerDisconnected(pl:Player){
+    this.sendToRoom({ method: 'playerDisconnected', data: pl.playerId })
   }
 
   removePlayer(pl:Player){
@@ -73,6 +98,13 @@ export class Room {
       pl.send({
         method: 'error',
         data: { text: 'Leave other room first', code: "in_other_room" }
+      })
+      return
+    }
+    if(this.gameStarted){
+      pl.send({
+        method: 'error',
+        data: { text: 'Game in this room already started', code: "game_in_room_started" }
       })
       return
     }

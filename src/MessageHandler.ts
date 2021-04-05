@@ -9,6 +9,7 @@ type handlerObj = {
 const getRoomsJSON = () => ({
   method: 'onGetRooms',
   data: Object.values(Server.instance.rooms)
+              .filter(r => !r.gameStarted)
               .map(r => r.toNetObject())
 })
 
@@ -40,6 +41,9 @@ export const MessageHandler:handlerObj = {
       method: 'chatMsg',
       data: { text: data, from: pl.playerId }
     })
+  },
+  startGame: (pl:Player) => {
+    Server.instance.rooms[pl.roomId || ""]?.startGame(pl)
   },
   createRoom: (pl:Player, data:any) => {
     const newRoom = new Room(data.name, pl.playerId, data.maxPlayers, data.password);

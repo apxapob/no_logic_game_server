@@ -45,6 +45,15 @@ export const MessageHandler:handlerObj = {
   startGame: (pl:Player) => {
     Server.instance.rooms[pl.roomId || ""]?.startGame(pl)
   },
+  shareGameState: (pl:Player, data:any) => {
+    const r = Server.instance.rooms[pl.roomId || ""]
+    if(!r) return
+
+    r.sendToOthers({
+      method: 'newGameState',
+      data: data
+    }, pl.playerId)
+  },
   createRoom: (pl:Player, data:any) => {
     const newRoom = new Room(data.name, pl.playerId, data.maxPlayers, data.password);
     Server.instance.rooms[newRoom.roomId] = newRoom;

@@ -33,9 +33,16 @@ export class Room {
 
   sendToRoom(msg:WSMessage){
     const json = JSON.stringify(msg)
+    this.playerIds.forEach(
+      plId => Server.instance.players[plId]?.sendString(json)
+    )
+  }
+
+  sendToOthers(msg:WSMessage, fromId:string){
+    const json = JSON.stringify(msg)
     this.playerIds.forEach(plId => {
-      const player = Server.instance.players[plId]
-      if(player){player.sendString(json)}
+      if(plId === fromId) return
+      Server.instance.players[plId]?.sendString(json)
     })
   }
 

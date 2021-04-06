@@ -58,17 +58,18 @@ export const MessageHandler:handlerObj = {
     const r = Server.instance.rooms[pl.roomId || ""]
     if(!r) return
 
-    const { to, msg } = data
-    if(!r.playerIds.includes(to)){ return }
-    
-    const toPlayer = Server.instance.players[to]
+    const to:Array<string> = data.to
+    const msg = data.msg
 
-    toPlayer?.send({
-      method: 'messageFromPlayer',
-      data: {
-        from: pl.playerId,
-        msg
-      }
+    to?.forEach(playerId => {
+      if(!r.playerIds.includes(playerId)){ return }
+    
+      const toPlayer = Server.instance.players[playerId]
+  
+      toPlayer?.send({
+        method: 'messageFromPlayer',
+        data: { from: pl.playerId, msg }
+      })
     })
   },
   createRoom: (pl:Player, data:any) => {

@@ -37,8 +37,6 @@ export class Server {
       pl.send({ method: 'onConnected', data: this.wsServer.clients.size })
 
       ws.on('message', message => {
-        console.log(`${pl.playerName}: ${message}`)
-        
         const msg = JSON.parse(message.toString())
         this.onGetMessage(pl, msg)
       })
@@ -66,7 +64,7 @@ export class Server {
     if(handler){
       handler(pl, msg.data)
     } else {
-      console.log("unknown message")
+      console.log("unknown message:", msg)
     }
   }
 

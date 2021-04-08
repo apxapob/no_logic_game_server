@@ -1,7 +1,7 @@
 {
-  "name": "sctb_server",
+  "name": "no_logic_game_server",
   "version": "1.0.0",
-  "description": "sctb server",
+  "description": "Simple server for games with logic on client",
   "main": "index.js",
   "scripts": {
     "start": "ts-node src/index.ts"

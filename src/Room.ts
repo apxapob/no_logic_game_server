@@ -67,10 +67,18 @@ export class Room {
 
   playerDisconnected(pl:Player){
     this.sendToRoom({ method: 'playerDisconnected', data: pl.playerId })
+    pl.roomId = null
+
+    if(this.playerIds.filter(plId => {
+      const roomPl = Server.instance.players[plId]
+      return roomPl && roomPl.roomId === this.roomId
+    }).length === 0){
+      delete Server.instance.rooms[this.roomId]
+    }
   }
 
   removePlayer(pl:Player){
-    pl.roomId = null;
+    pl.roomId = null
     const playerIdx = this.playerIds.indexOf(pl.playerId)
     if(playerIdx === -1){ return }
 
@@ -91,6 +99,30 @@ export class Room {
     } else {
       delete Server.instance.rooms[this.roomId]
     }
+  }
+
+  reconnectPlayer(pl:Player){
+    if(!this.gameStarted){
+      return
+    }
+    if(!this.playerIds.includes(pl.playerId)){
+      pl.send({
+        method: 'error',
+        data: { text: 'Game in this room started without you', code: "game_started_without_you" }
+      })
+      return
+    }
+
+    this.sendToRoom({
+      method: 'playerReconnected',
+      data: pl.playerId
+    })
+    
+    pl.roomId = this.roomId
+    pl.send({
+      method: 'onRoomEnter',
+      data: this.toNetObject()
+    })
   }
 
   addPlayer(pl:Player, password:string|null){

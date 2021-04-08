@@ -6,10 +6,10 @@ type handlerObj = {
   [key: string]: (pl:Player, data:any) => void;
 };
 
-const getRoomsJSON = () => ({
+const getRoomsJSON = (playerId:string) => ({
   method: 'onGetRooms',
   data: Object.values(Server.instance.rooms)
-              .filter(r => !r.gameStarted)
+              .filter(r => !r.gameStarted || r.playerIds.includes(playerId))
               .map(r => r.toNetObject())
 })
 
@@ -21,7 +21,7 @@ const getPlayersJSON = (playerIds:Array<string>) => ({
 })
 
 export const MessageHandler:handlerObj = {
-  getRooms: (pl:Player) => pl.send(getRoomsJSON()),
+  getRooms: (pl:Player) => pl.send(getRoomsJSON(pl.playerId)),
   changeName: (pl:Player, data:any) => {
     pl.playerName = data
     const r = Server.instance.rooms[pl.roomId || ""]
@@ -32,7 +32,7 @@ export const MessageHandler:handlerObj = {
     })
   },
   enterRoom: (pl:Player, data:any) => Server.instance.enterRoom(pl, data.id, data.password),
-  leaveRoom: (pl:Player) => Server.instance.onLeaveRoom(pl),
+  leaveRoom: (pl:Player) => Server.instance.onPlayerLeave(pl),
   getPlayers: (pl:Player, data:any) => pl.send(getPlayersJSON(data || [])),
   sendChatMsg: (pl:Player, data:any) => {
     const r = Server.instance.rooms[pl.roomId || ""]

@@ -44,7 +44,7 @@ export class Server {
         console.log('socket error', e)
       })
       ws.on('close', () => {
-        this.onLeaveRoom(pl)
+        this.onPlayerLeave(pl)
         
         pl.ws = null
         console.log(pl.playerName + ' disconnected')
@@ -52,10 +52,14 @@ export class Server {
     })
   }
 
-  onLeaveRoom(pl:Player){
-    if(pl.roomId){
-      const room = this.rooms[pl.roomId]
-      if(room){ room.removePlayer(pl) }
+  onPlayerLeave(pl:Player){
+    const room = this.rooms[pl.roomId || '']
+    if(!room){return}
+    
+    if(room.gameStarted){
+      room.playerDisconnected(pl)
+    } else {
+      room.removePlayer(pl) 
     }
   }
 
@@ -84,7 +88,11 @@ export class Server {
       })
       return
     }
-    r.addPlayer(pl, password)
+    if(r.gameStarted){
+      r.reconnectPlayer(pl)
+    } else {
+      r.addPlayer(pl, password)
+    }
   }
 
   registerPlayer(ws:WebSocket, url:string):Player|null {

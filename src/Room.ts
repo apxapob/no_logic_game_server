@@ -6,15 +6,17 @@ export class Room {
   public ownerId:string = ''
   public roomName:string = ''
   public password:string|null = null
+  public gameData:string|object|null = null
   public maxPlayers = 6
   public playerIds:Array<string> = []
   public gameStarted:boolean = false
 
-  constructor(name:string, ownerId:string, maxPlayers = -1, password = null){
+  constructor(name:string, ownerId:string, maxPlayers = -1, password = null, gameData:string|object|null = null){
     this.roomId = Date.now().toString()
     this.ownerId = ownerId
     this.roomName = name || 'Room'
     this.password = password
+    this.gameData = gameData
     if(maxPlayers > 0){
       this.maxPlayers = maxPlayers
     }
@@ -27,6 +29,7 @@ export class Room {
       name: this.roomName,
       players: this.playerIds,
       maxPlayers: this.maxPlayers,
+      gameData: this.gameData,
       gameStarted: this.gameStarted
     }
   }

@@ -73,7 +73,7 @@ export const MessageHandler:handlerObj = {
     })
   },
   createRoom: (pl:Player, data:any) => {
-    const newRoom = new Room(data.name, pl.playerId, data.maxPlayers, data.password);
+    const newRoom = new Room(data.name, pl.playerId, data.maxPlayers, data.password, data.gameData);
     Server.instance.rooms[newRoom.roomId] = newRoom;
     Server.instance.enterRoom(pl, newRoom.roomId, newRoom.password);
     Server.instance.broadcast({

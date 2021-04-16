@@ -118,7 +118,7 @@ export class Room {
 
     this.sendToRoom({
       method: 'playerReconnected',
-      data: pl.playerId
+      data: pl.toNetObject()
     })
     
     pl.roomId = this.roomId
@@ -167,7 +167,7 @@ export class Room {
 
     this.sendToRoom({
       method: 'playerEnter',
-      data: pl.playerId
+      data: pl.toNetObject()
     })
     
     this.playerIds.push(pl.playerId)

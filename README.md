@@ -33,12 +33,14 @@ Server sends and receives json strings of this format
 ## Connect to server
 First time client must connect without credentials. 
 Like this:
+```
 ws://localhost:8080/
-
+```
 Server will create a new account and send its data to client.
 After this client can connect with credentials like this:
+```
 ws://localhost:8080/?name=$myPlayerName&id=$myId&password=$myPassword
-
+```
 
 ### Server commands:
 - getRooms - get open rooms list. No data.

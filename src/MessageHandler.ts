@@ -54,6 +54,15 @@ export const MessageHandler:handlerObj = {
       data: data
     }, pl.playerId)
   },
+  sendToRoom: (pl:Player, data:any) => {
+    const r = Server.instance.rooms[pl.roomId || ""]
+    if(!r) return
+
+    r.sendToOthers({
+      method: 'messageFromPlayer',
+      data: { from: pl.playerId, msg: data }
+    }, pl.playerId)
+  },
   sendTo: (pl:Player, data:any) => {
     const r = Server.instance.rooms[pl.roomId || ""]
     if(!r) return

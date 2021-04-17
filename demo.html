@@ -1,0 +1,242 @@
+<!DOCTYPE>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>Demo</title>
+    <style>
+      body { 
+        margin:0;
+        padding:0;
+      }
+      canvas#game {
+        width:100%;
+        height:100%;
+      }
+      div#p1Div {
+        position: absolute;
+        color: #fff;
+        left: 0;
+      }
+      div#p2Div {
+        position: absolute;
+        color: #fff;
+        right: 0;
+      }
+    </style>
+</head>
+<body>
+  <div id="p1Div">
+    Connecting...
+  </div>
+  <div id="p2Div">
+    Waiting for player...
+  </div>
+  <canvas id="game" ></canvas>
+  <script>
+    //Network
+    var socket = new WebSocket("ws://localhost:8080/")
+    var isRoomOwner = false
+    const p1Div = document.getElementById('p1Div')
+    const p2Div = document.getElementById('p2Div')
+    const gameCanvas = document.getElementById('game')
+    var gameData = {
+      p1pos: 0.5,
+      p1score: 0,
+
+      p2pos: 0.5,
+      p2score: 0,
+
+      ballSize: 0.02,
+      ballX: 0.5,
+      ballY: 0.5,
+      ballSpeedX: 0.0,
+      ballSpeedY: 0.005,
+    }
+    const myPlayerData = {}
+    const opponentData = {}
+
+    const MessageHandler = {
+      accountCreated: data => {
+        myPlayerData.id = data.id
+        myPlayerData.name = data.name
+        myPlayerData.password = data.password
+      },
+      onConnected: data => {
+        socket.send(JSON.stringify({
+          method: "getRooms"
+        }))
+      },
+      onGetRooms: rooms => {
+        const availableRooms = rooms.filter(r => r.players.length === 1)
+        if(availableRooms.length === 0){
+          socket.send(JSON.stringify({
+            method: "createRoom",
+            data: {
+              name: myPlayerData.name,
+              password: null,
+              maxPlayers: 2 
+            }
+          }))
+        } else {
+          socket.send(JSON.stringify({
+            method: "enterRoom",
+            data: {
+              id: availableRooms[0].id,
+              password: null
+            }
+          }))
+        }
+      },
+      onRoomEnter: data => {
+        if(data.ownerId !== myPlayerData.id){
+          opponentData.id = data.ownerId
+          opponentData.name = data.name
+        }
+      },
+      playerEnter: data => {
+        opponentData.id = data.id
+        opponentData.name = data.name
+        gameData.ballSpeedX = 0.005
+      },
+      playerLeft: playerId => {},
+      roomCreated: roomData => {
+        isRoomOwner = true
+      },
+      newGameState: data => {
+        gameData = data
+      },
+      messageFromPlayer: data => {
+        gameData.p2pos = data.msg.p2pos
+      }
+    }
+
+    socket.onopen = function() {
+      console.log("connected")
+    }
+
+    socket.onmessage = function(event) {
+      const msg = JSON.parse(event.data)
+      console.log("message:", msg)
+      if(msg.method){
+        MessageHandler[msg.method](msg.data)
+      }
+    }
+
+    socket.onclose = function(event) {
+      console.log('connection closed code:', event.code, 'reason:', event.reason)
+    }
+
+    socket.onerror = function(error) {
+      console.error("socket error", error)
+    }
+  </script>
+
+  <script>
+    //Game
+    var ctx = gameCanvas.getContext('2d')
+
+    ctx.canvas.width = gameCanvas.offsetWidth
+    ctx.canvas.height = gameCanvas.offsetHeight
+
+    const drawGame = () => {
+      if(myPlayerData.name){
+        if(isRoomOwner){
+          p1Div.innerText = myPlayerData.name + ": " + gameData.p1score
+        } else {
+          p2Div.innerText = myPlayerData.name + ": " + gameData.p2score
+        }
+      }
+      if(opponentData.name){
+        if(isRoomOwner){
+          p2Div.innerText = opponentData.name + ": " + gameData.p2score
+        } else {
+          p1Div.innerText = opponentData.name + ": " + gameData.p1score
+        }
+      }
+
+      ctx.fillStyle = 'black'
+      ctx.fillRect(0,0, ctx.canvas.width, ctx.canvas.height)
+
+      ctx.fillStyle = "white"
+      ctx.fillRect(
+        0, 
+        ctx.canvas.height * (gameData.p1pos - 0.05),
+        ctx.canvas.width * 0.025,
+        ctx.canvas.height * 0.1
+      )
+      ctx.fillRect(
+        ctx.canvas.width * 0.975, 
+        ctx.canvas.height * (gameData.p2pos - 0.05),
+        ctx.canvas.width * 0.025,
+        ctx.canvas.height * 0.1
+      )
+      
+      ctx.beginPath()
+      ctx.arc(
+        ctx.canvas.width * gameData.ballX,
+        ctx.canvas.height * gameData.ballY,
+        ctx.canvas.width * gameData.ballSize,
+        0, Math.PI*2
+      )
+      ctx.fill()
+    }
+
+    const onUpdate = () => {
+      if(isRoomOwner){//only room owner can share game state
+        gameData.ballX += gameData.ballSpeedX
+        gameData.ballY += gameData.ballSpeedY
+        if(gameData.ballX - gameData.ballSize < 0.025 &&
+           Math.abs(gameData.ballY - gameData.p1pos) < 0.05){
+          gameData.ballSpeedX *= -1
+          gameData.ballX = gameData.ballSize + 0.025
+        }
+        if(gameData.ballX + gameData.ballSize > 0.975 &&
+           Math.abs(gameData.ballY - gameData.p2pos) < 0.05){
+          gameData.ballSpeedX *= -1
+          gameData.ballX = -gameData.ballSize + 0.975
+        }
+        if(gameData.ballX + gameData.ballSize > 1){
+          gameData.ballSpeedX *= -1
+          gameData.p1score++
+        }
+        if(gameData.ballX - gameData.ballSize < 0){
+          gameData.ballSpeedX *= -1
+          gameData.p2score++
+        }
+        if(gameData.ballY + gameData.ballSize > 1 ||
+          gameData.ballY - gameData.ballSize < 0){
+          gameData.ballSpeedY *= -1
+        }
+        if(socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            method: "shareGameState",
+            data: gameData
+          }))
+        }
+      }
+      
+      drawGame()
+
+      window.requestAnimationFrame(onUpdate)
+    }
+    window.requestAnimationFrame(onUpdate)
+
+    const mouseMove = e => {
+      const y = e.pageY / gameCanvas.offsetHeight;
+    
+      if(isRoomOwner){
+        gameData.p1pos = y
+      } else {
+        gameData.p2pos = y
+        if(socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            method: "sendToRoom",
+            data: { p2pos: y }
+          }))
+        }
+      }
+    }
+    gameCanvas.addEventListener('mousemove', mouseMove)
+  </script>
+</body>
+</html>

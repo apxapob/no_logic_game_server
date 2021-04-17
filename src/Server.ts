@@ -34,7 +34,12 @@ export class Server {
         return
       }
 
-      pl.send({ method: 'onConnected', data: this.wsServer.clients.size })
+      pl.send({
+        method: 'onConnected', 
+        data: {
+          online: this.wsServer.clients.size
+        }
+      })
 
       ws.on('message', message => {
         const msg = JSON.parse(message.toString())
@@ -97,7 +102,7 @@ export class Server {
 
   registerPlayer(ws:WebSocket, url:string):Player|null {
     const loginParams = new URLSearchParams(url.substr(1))
-    const name = loginParams.get("name") || "Player"
+    const name = loginParams.get("name") || ("Player " + (Date.now()%1296).toString(36).toUpperCase())
     const id = loginParams.get("id")
     const password = loginParams.get("password")
     

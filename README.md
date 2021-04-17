@@ -30,6 +30,16 @@ Server sends and receives json strings of this format
 }
 ```
 
+## Connect to server
+First time client must connect without credentials. 
+Like this:
+ws://localhost:8080/
+
+Server will create a new account and send its data to client.
+After this client can connect with credentials like this:
+ws://localhost:8080/?name=$myPlayerName&id=$myId&password=$myPassword
+
+
 ### Server commands:
 - getRooms - get open rooms list. No data.
 - changeName - change player name. Data: new name string.
@@ -43,7 +53,7 @@ Server sends and receives json strings of this format
 - sendToRoom - send any data to other players in room. Data: any object
 - sendTo - send any data to selected player in room. Data: { to:"playerId", msg:{...any object} }
 
-### messages from server:
+### Messages from server:
 - onConnected - after successfull connection.
 - roomCreated - Data: object with created room information
 - onGetRooms - Data: array with available rooms information

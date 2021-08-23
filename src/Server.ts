@@ -22,7 +22,7 @@ export class Server {
 
   constructor(){
     Server.instance = this
-    this.wsServer = new WebSocket.Server({ port: 8080 })
+    this.wsServer = new WebSocket.Server({ port: 3000 })
 
     this.wsServer.on('connection', (ws, req) => {
       const pl = this.registerPlayer(ws, req.url || '')

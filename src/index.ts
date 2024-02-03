@@ -7,4 +7,3 @@ process.on('uncaughtException', err => {
 });
 
 let serverInstance = new Server()
-console.log("server started")

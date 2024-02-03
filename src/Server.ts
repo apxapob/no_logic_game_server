@@ -22,9 +22,10 @@ export class Server {
 
   constructor(){
     Server.instance = this
-    this.wsServer = new WebSocket.Server({ port: 3000 })
+    this.wsServer = new WebSocket.Server({ port: 3333 })
 
     this.wsServer.on('connection', (ws, req) => {
+      console.log('new connection')
       const pl = this.registerPlayer(ws, req.url || '')
       if(pl === null){
         ws.send(
@@ -55,6 +56,8 @@ export class Server {
         console.log(pl.playerName + ' disconnected')
       })
     })
+
+    console.log("server started")
   }
 
   onPlayerLeave(pl:Player){

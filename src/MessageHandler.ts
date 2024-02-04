@@ -42,8 +42,8 @@ export const MessageHandler:handlerObj = {
       data: { text: data, from: pl.playerId }
     })
   },
-  startGame: (pl:Player) => {
-    Server.instance.rooms[pl.roomId || ""]?.startGame(pl)
+  startGame: (pl:Player, data:any) => {
+    Server.instance.rooms[pl.roomId || ""]?.startGame(pl, data)
   },
   shareGameState: (pl:Player, data:any) => {
     const r = Server.instance.rooms[pl.roomId || ""]
@@ -63,12 +63,11 @@ export const MessageHandler:handlerObj = {
       data: { from: pl.playerId, msg: data }
     }, pl.playerId)
   },
-  sendTo: (pl:Player, data:any) => {
+  sendTo: (pl:Player, data:{ to:string[], msg:any }) => {
     const r = Server.instance.rooms[pl.roomId || ""]
     if(!r) return
 
-    const to:Array<string> = data.to
-    const msg = data.msg
+    const { to, msg } = data
 
     to?.forEach(playerId => {
       if(!r.playerIds.includes(playerId)){ return }

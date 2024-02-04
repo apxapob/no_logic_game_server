@@ -49,7 +49,7 @@ export class Room {
     })
   }
 
-  startGame(starter:Player){
+  startGame(starter:Player, data:any){
     if(starter.playerId != this.ownerId){ 
       starter.send({
         method: 'error',
@@ -65,7 +65,7 @@ export class Room {
       return 
     }
     this.gameStarted = true
-    this.sendToRoom({ method: 'gameStarted' })
+    this.sendToRoom({ method: 'gameStarted', data })
   }
 
   playerDisconnected(pl:Player){

@@ -4,7 +4,8 @@
   "description": "Simple server for games with logic on client",
   "main": "index.js",
   "scripts": {
-    "start": "ts-node src/index.ts"
+    "start": "ts-node src/index.ts",
+    "dev": "ts-node src/index.ts"
   },
   "author": "Alexander Arkharov",
   "license": "MIT",

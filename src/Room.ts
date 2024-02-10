@@ -117,7 +117,7 @@ export class Room {
     }
 
     this.sendToRoom({
-      method: 'playerReconnected',
+      method: 'playerEnter',
       data: pl.toNetObject()
     })
     

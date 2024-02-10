@@ -45,14 +45,27 @@ export const MessageHandler:handlerObj = {
   startGame: (pl:Player, data:any) => {
     Server.instance.rooms[pl.roomId || ""]?.startGame(pl, data)
   },
-  shareGameState: (pl:Player, data:any) => {
+  shareGameState: (pl:Player, data:{ gamestate:any, to:string[] }) => {
     const r = Server.instance.rooms[pl.roomId || ""]
     if(!r || r.ownerId !== pl.playerId) return
 
-    r.sendToOthers({
-      method: 'newGameState',
-      data: data
-    }, pl.playerId)
+    if(data.to){
+      data.to.forEach(playerId => {
+        if(!r.playerIds.includes(playerId)){ return }
+      
+        const toPlayer = Server.instance.players[playerId]
+    
+        toPlayer?.send({
+          method: 'newGameState',
+          data: data.gamestate
+        })
+      })
+    } else {
+      r.sendToOthers({
+        method: 'newGameState',
+        data: data.gamestate
+      }, pl.playerId)
+    }
   },
   sendToRoom: (pl:Player, data:any) => {
     const r = Server.instance.rooms[pl.roomId || ""]

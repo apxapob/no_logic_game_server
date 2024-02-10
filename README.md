@@ -51,7 +51,11 @@ ws://localhost:8080/?name=$myPlayerName&id=$myId&password=$myPassword
 - getPlayers - get selected players data. Data: array of players ids.
 - sendChatMsg - send chat message to current room. Data: any string.
 - startGame - starts game, after this no new players can enter this room. No data.
-- shareGameState - can be used only by room owner for sharing full game state with other players in room. Data: any object.
+- shareGameState - can be used only by room owner for sharing full game state with other players. 
+Data: { 
+  gamestate: any object, 
+  to: list of player ids(optional)
+}
 - sendToRoom - send any data to other players in room. Data: any object
 - sendTo - send any data to selected player in room. Data: { to:"playerId", msg:{...any object} }
 
@@ -71,5 +75,4 @@ ws://localhost:8080/?name=$myPlayerName&id=$myId&password=$myPassword
 - chatMsg - chat message. Data: { text: any string, from: playerId }
 - gameStarted - when game starts. No data.
 - playerDisconnected - Data: playerId
-- playerReconnected - Data: player information
 - newRoomOwner - when owner lefts room server appoints a new room owner. Data: ownerId

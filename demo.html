@@ -210,7 +210,9 @@
         if(socket.readyState === WebSocket.OPEN) {
           socket.send(JSON.stringify({
             method: "shareGameState",
-            data: gameData
+            data: {
+              gamestate: gameData
+            }
           }))
         }
       }

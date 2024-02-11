@@ -3,7 +3,7 @@ import { Player, WSMessage } from "./Player";
 
 export class Room {
   public roomId:string = ''
-  public ownerId:string = ''
+  public ownerId:string|null = ''
   public roomName:string = ''
   public password:string|null = null
   public gameData:string|object|null = null
@@ -71,12 +71,18 @@ export class Room {
   playerDisconnected(pl:Player){
     this.sendToRoom({ method: 'playerDisconnected', data: pl.playerId })
     pl.roomId = null
-
-    if(this.playerIds.filter(plId => {
-      const roomPl = Server.instance.players[plId]
-      return roomPl && roomPl.roomId === this.roomId
-    }).length === 0){
+    if(pl.playerId !== this.ownerId){ return }
+    
+    this.ownerId = this.playerIds.find(
+      id => id !== pl.playerId && Server.instance.players[id]?.roomId === this.roomId
+    ) ?? null
+    if(this.ownerId === null){
       delete Server.instance.rooms[this.roomId]
+    } else {
+      this.sendToRoom({
+        method: 'newRoomOwner',
+        data: this.ownerId
+      })
     }
   }
 

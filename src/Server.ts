@@ -55,13 +55,13 @@ export class Server {
         
         pl.ws = null
         console.log(pl.playerName + ' disconnected')
+        clearInterval(intervalId)
       })
 
       const intervalId = setInterval(() => {
         if(Date.now() - lastMsgTime > 50000){
           console.log(pl.playerName + ' is not answering')
           ws.close()
-          clearInterval(intervalId)
         } else if(Date.now() - lastMsgTime > 10000){
           pl.send({ method: "Ping" })
         }

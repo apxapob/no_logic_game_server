@@ -21,6 +21,7 @@ const getPlayersJSON = (playerIds:Array<string>) => ({
 })
 
 export const MessageHandler:handlerObj = {
+  Pong: (pl:Player) => {},
   getRooms: (pl:Player) => pl.send(getRoomsJSON(pl.playerId)),
   changeName: (pl:Player, data:any) => {
     pl.playerName = data

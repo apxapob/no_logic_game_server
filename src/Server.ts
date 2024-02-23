@@ -25,8 +25,9 @@ export class Server {
     this.wsServer = new WebSocket.Server({ port: 3333 })
 
     this.wsServer.on('connection', (ws, req) => {
-      console.log('new connection')
       const pl = this.registerPlayer(ws, req.url || '')
+      console.log('new connection: ' + pl?.playerName)
+      
       if(pl === null){
         ws.send(
           JSON.stringify({ method: 'wrongPassword' })
@@ -42,19 +43,29 @@ export class Server {
         }
       })
 
+      let lastMsgTime = Date.now()
       ws.on('message', message => {
         const msg = JSON.parse(message.toString())
         this.onGetMessage(pl, msg)
+        lastMsgTime = Date.now()
       })
-      ws.on('error', e => {
-        console.log('socket error', e)
-      })
+      ws.on('error', e => console.log('socket error', e))
       ws.on('close', () => {
         this.onPlayerLeave(pl)
         
         pl.ws = null
         console.log(pl.playerName + ' disconnected')
       })
+
+      const intervalId = setInterval(() => {
+        if(Date.now() - lastMsgTime > 50000){
+          console.log(pl.playerName + ' is not answering')
+          ws.close()
+          clearInterval(intervalId)
+        } else if(Date.now() - lastMsgTime > 10000){
+          pl.send({ method: "Ping" })
+        }
+      }, 10000)
     })
 
     console.log("server started")

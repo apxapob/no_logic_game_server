@@ -1,10 +1,10 @@
 import { Player } from "./Player"
-import { Room } from "./Room";
+import { Room } from "./Room"
 import { Server } from "./Server"
 
 type handlerObj = {
-  [key: string]: (pl:Player, data:any) => void;
-};
+  [key: string]: (pl:Player, data:any) => void
+}
 
 const getRoomsJSON = (playerId:string) => ({
   method: 'onGetRooms',
@@ -95,9 +95,9 @@ export const MessageHandler:handlerObj = {
     })
   },
   createRoom: (pl:Player, data:any) => {
-    const newRoom = new Room(data.name, pl.playerId, data.maxPlayers, data.password, data.gameData);
-    Server.instance.rooms[newRoom.roomId] = newRoom;
-    Server.instance.enterRoom(pl, newRoom.roomId, newRoom.password);
+    const newRoom = new Room(data.name, pl.playerId, data.maxPlayers, data.password, data.gameData)
+    Server.instance.rooms[newRoom.roomId] = newRoom
+    Server.instance.enterRoom(pl, newRoom.roomId, newRoom.password)
     Server.instance.broadcast({
       method: 'roomCreated',
       data: newRoom.toNetObject()

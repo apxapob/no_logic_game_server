@@ -1,4 +1,4 @@
 
 export class Lobby {
-  public playersId:Array<string> = [];
+  public playersId:Array<string> = []
 }

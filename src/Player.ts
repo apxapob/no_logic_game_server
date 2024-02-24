@@ -14,7 +14,7 @@ const generatePassword = () => 'xxxxxxxxxxxxxxxx'.replace(/x/g,
 export type WSMessage = {
   method: string;
   data?: number | string | object;
-};
+}
 
 export class Player {
   public playerId:string = ''

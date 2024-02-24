@@ -1,15 +1,16 @@
 import WebSocket from "ws"
 import { Lobby } from "./Lobby"
-import { MessageHandler } from "./MessageHandler";
+import { MessageHandler } from "./MessageHandler"
 import { Player } from "./Player"
 import { Room } from "./Room"
+import { logMessage } from "."
 
 type playersObj = {
   [key: string]: Player;
-};
+}
 type roomsObj = {
   [key: string]: Room;
-};
+}
 
 export class Server {
   public static instance:Server
@@ -21,12 +22,15 @@ export class Server {
   public rooms:roomsObj = {}
 
   constructor(){
+    if(!!Server.instance){
+      throw new Error("Server has already started")
+    }
     Server.instance = this
     this.wsServer = new WebSocket.Server({ port: 3333 })
 
     this.wsServer.on('connection', (ws, req) => {
       const pl = this.registerPlayer(ws, req.url || '')
-      console.log('new connection: ' + pl?.playerName)
+      logMessage('new connection: ' + pl?.playerName)
       
       if(pl === null){
         ws.send(
@@ -49,18 +53,18 @@ export class Server {
         this.onGetMessage(pl, msg)
         lastMsgTime = Date.now()
       })
-      ws.on('error', e => console.log('socket error', e))
+      ws.on('error', e => logMessage('socket error', e))
       ws.on('close', () => {
         this.onPlayerLeave(pl)
         
         pl.ws = null
-        console.log(pl.playerName + ' disconnected')
+        logMessage(pl.playerName + ' disconnected')
         clearInterval(intervalId)
       })
 
       const intervalId = setInterval(() => {
         if(Date.now() - lastMsgTime > 50000){
-          console.log(pl.playerName + ' is not answering')
+          logMessage(pl.playerName + ' is not answering')
           ws.close()
         } else if(Date.now() - lastMsgTime > 10000){
           pl.send({ method: "Ping" })
@@ -68,7 +72,15 @@ export class Server {
       }, 10000)
     })
 
-    console.log("server started")
+    logMessage("server started")
+  }
+
+  stop(...args:any){
+    // @ts-ignore
+    Server.instance = null
+    this.wsServer.close()
+    this.wsServer.removeAllListeners()
+    logMessage("server stopped", ...args)
   }
 
   onPlayerLeave(pl:Player){
@@ -87,7 +99,7 @@ export class Server {
     if(handler){
       handler(pl, msg.data)
     } else {
-      console.log("unknown message:", msg)
+      logMessage("unknown message:", msg)
     }
   }
 

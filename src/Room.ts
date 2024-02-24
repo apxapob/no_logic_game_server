@@ -1,5 +1,5 @@
-import { Server } from "./Server";
-import { Player, WSMessage } from "./Player";
+import { Server } from "./Server"
+import { Player, WSMessage } from "./Player"
 
 export class Room {
   public roomId:string = ''

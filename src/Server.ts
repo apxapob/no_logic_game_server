@@ -132,8 +132,8 @@ export class Server {
     const id = loginParams.get("id")
     const password = loginParams.get("password")
     
-    if(!id){
-      const pl = new Player(name, null, null, ws)
+    if(!id || !this.players[id]){
+      const pl = new Player(name, id, null, ws)
       pl.send({
         method: 'accountCreated',
         data: { name: pl.playerName, id: pl.playerId, password: pl.password }

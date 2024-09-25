@@ -67,7 +67,7 @@ Data: {
 - accountCreated - when someone connects without credentials server creates new account. Data: { name: playerName, id: playerId, password: password }
 - onGetPlayers - Data: array of players
 - playerEnter - when another player enters current room. Data: new player info
-- error - when smth goes wrong. Data: { text: 'erroe text', code: "error code" }
+- error - when smth goes wrong. Data: { text: 'error text', code: "error code" }
 - playerLeft - when someone lefts current room. Data: playerId
 - nameChanged - when someone changes name. Data: { name: new name, id: playerId }
 - newGameState - when room ownes shares game state. Data: any object

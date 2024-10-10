@@ -1,4 +1,4 @@
-import WebSocket from "ws"
+import WebSocket, { RawData } from "ws"
 
 const generateUID = () => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -35,6 +35,9 @@ export class Player {
   }
   sendString(msg:String){
     this.ws?.send(msg)
+  }
+  sendBinary(bytes:RawData){
+    this.ws?.send(bytes)
   }
 
   toNetObject() {

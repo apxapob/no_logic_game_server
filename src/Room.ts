@@ -1,5 +1,6 @@
 import { Server } from "./Server"
 import { Player, WSMessage } from "./Player"
+import { RawData } from "ws"
 
 export class Room {
   public roomId:string = ''
@@ -46,6 +47,13 @@ export class Room {
     this.playerIds.forEach(plId => {
       if(plId === fromId) return
       Server.instance.players[plId]?.sendString(json)
+    })
+  }
+
+  sendBinaryToOthers(bytes:RawData, fromId:string){
+    this.playerIds.forEach(plId => {
+      if(plId === fromId) return
+      Server.instance.players[plId]?.sendBinary(bytes)
     })
   }
 

@@ -48,9 +48,16 @@ export class Server {
       })
 
       let lastMsgTime = Date.now()
-      ws.on('message', message => {
-        const msg = JSON.parse(message.toString())
-        this.onGetMessage(pl, msg)
+      ws.on('message', (message, isBinary) => {
+        if(isBinary){
+          const r = Server.instance.rooms[pl.roomId || ""]
+          if(!r) return;
+          
+          r.sendBinaryToOthers(message, pl.playerId)
+        } else {
+          const msg = JSON.parse(message.toString())
+          this.onGetMessage(pl, msg)
+        }
         lastMsgTime = Date.now()
       })
       ws.on('error', e => logMessage('socket error', e))

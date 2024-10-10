@@ -10,7 +10,7 @@
   "author": "Alexander Arkharov",
   "license": "MIT",
   "dependencies": {
-    "ws": "^8.16.0"
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.16",

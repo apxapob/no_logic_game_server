@@ -16,15 +16,19 @@ export class Server {
   public static instance:Server
   
   private wsServer:WebSocket.Server
+  private DevMode:boolean
 
   public players:playersObj = {}
   public lobby = new Lobby()
   public rooms:roomsObj = {}
 
-  constructor(){
+  private totalBytes = 0;
+
+  constructor(DevMode:boolean){
     if(!!Server.instance){
       throw new Error("Server has already started")
     }
+    this.DevMode = DevMode
     Server.instance = this
     this.wsServer = new WebSocket.Server({ port: 3333 })
 
@@ -54,6 +58,10 @@ export class Server {
           if(!r) return;
           
           r.sendBinaryToOthers(message, pl.playerId)
+          this.totalBytes += (message as Buffer).length;
+          if(this.DevMode){
+            console.log("binary message:", (message as Buffer).length + "/" + this.totalBytes)
+          }
         } else {
           const msg = JSON.parse(message.toString())
           this.onGetMessage(pl, msg)

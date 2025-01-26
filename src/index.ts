@@ -2,6 +2,8 @@ import { Server } from "./Server"
 
 console.clear()
 
+const DevMode = process.argv.includes("dev")
+
 export const logMessage = (message?: any, ...optionalParams: any[]) => {
   console.log(
     `[${new Date().toLocaleString()}]`, 
@@ -9,7 +11,7 @@ export const logMessage = (message?: any, ...optionalParams: any[]) => {
   )
 }
 
-new Server()
+new Server(DevMode)
 
 const exitHandler = (...args:any) => {
   Server.instance?.stop(args)

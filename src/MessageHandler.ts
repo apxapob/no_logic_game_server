@@ -46,6 +46,17 @@ export const MessageHandler:handlerObj = {
   startGame: (pl:Player, data:any) => {
     Server.instance.rooms[pl.roomId || ""]?.startGame(pl, data)
   },
+  requestGameState: (pl:Player) => {
+    const r = Server.instance.rooms[pl.roomId || ""]
+    if(!r || !r.ownerId) return
+
+    const roomOwner = Server.instance.players[r.ownerId]
+
+    roomOwner?.send({
+      method: 'gameStateRequested',
+      data: pl.toNetObject()
+    })
+  },
   shareGameState: (pl:Player, data:{ gamestate:any, to:string[] }) => {
     const r = Server.instance.rooms[pl.roomId || ""]
     if(!r || r.ownerId !== pl.playerId) return

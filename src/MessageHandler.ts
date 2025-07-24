@@ -23,7 +23,7 @@ const getPlayersJSON = (playerIds:Array<string>) => ({
 export const MessageHandler:handlerObj = {
   Pong: (pl:Player) => {},
   getRooms: (pl:Player) => pl.send(getRoomsJSON(pl.playerId)),
-  changeName: (pl:Player, data:any) => {
+  changeName: (pl:Player, data:string) => {
     pl.playerName = data
     const r = Server.instance.rooms[pl.roomId || ""]
     if(!r) return
@@ -32,10 +32,10 @@ export const MessageHandler:handlerObj = {
       data: { name: pl.playerName, playerId: pl.playerId }
     })
   },
-  enterRoom: (pl:Player, data:any) => Server.instance.enterRoom(pl, data.roomId, data.password),
+  enterRoom: (pl:Player, data:{ roomId:string, password:string }) => Server.instance.enterRoom(pl, data.roomId, data.password),
   leaveRoom: (pl:Player) => Server.instance.onPlayerLeave(pl),
   getPlayers: (pl:Player, data:any) => pl.send(getPlayersJSON(data || [])),
-  sendChatMsg: (pl:Player, data:any) => {
+  sendChatMsg: (pl:Player, data:string) => {
     const r = Server.instance.rooms[pl.roomId || ""]
     if(!r) return
     r.sendToRoom({
@@ -105,7 +105,7 @@ export const MessageHandler:handlerObj = {
       })
     })
   },
-  createRoom: (pl:Player, data:any) => {
+  createRoom: (pl:Player, data:{ name:string, maxPlayers:number, password?:string, gameData:any }) => {
     const newRoom = new Room(data.name, pl.playerId, data.maxPlayers, data.password, data.gameData)
     Server.instance.rooms[newRoom.roomId] = newRoom
     Server.instance.enterRoom(pl, newRoom.roomId, newRoom.password)

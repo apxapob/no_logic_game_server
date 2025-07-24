@@ -13,11 +13,11 @@ export class Room {
   public playerIds:Array<string> = []
   public gameStarted:boolean = false
 
-  constructor(name:string, ownerId:string, maxPlayers = -1, password = null, gameData:string|object|null = null){
+  constructor(name:string, ownerId:string, maxPlayers = -1, password?:string, gameData:string|object|null = null){
     this.roomId = generateUID()
     this.ownerId = ownerId
     this.roomName = name || 'Room'
-    this.password = password
+    this.password = password ?? null
     this.gameData = gameData
     if(maxPlayers > 0){
       this.maxPlayers = maxPlayers

@@ -58,10 +58,14 @@ Data: {
 }
 - sendToRoom - send any data to other players in room. Data: any object
 - sendTo - send any data to selected player in room. Data: { to:"playerId", msg:{...any object} }
+- Pong - Data: server timestamp in milliseconds.
+
 
 ### Messages from server:
 - onConnected - after successfull connection.
 - roomCreated - Data: object with created room information
+- roomDeleted - Data - roomId
+- roomBlock - when game started and no more players can enter this room. Data - roomId
 - onGetRooms - Data: array with available rooms information
 - onRoomEnter - when successfully entered room. Data: room info
 - accountCreated - when someone connects without credentials server creates new account. Data: { name: playerName, playerId: playerId, password: password }
@@ -76,3 +80,10 @@ Data: {
 - gameStarted - when game starts. No data.
 - playerDisconnected - Data: playerId
 - newRoomOwner - when owner lefts room server appoints a new room owner. Data: ownerId
+- RoomRTT - Data: dictionary with RTT values for all players in the room
+- Ping - Server sends Ping message to all clients every 10 seconds, to check if they are still connected. Data: server timestamp in milliseconds. You need to respond to this message with Pong message and send back the same timestamp for correct RTT(Round Trip Time) measurement.
+
+
+
+
+

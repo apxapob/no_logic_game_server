@@ -39,14 +39,14 @@ ws://localhost:8080/
 Server will create a new account and send its data to client.
 After this client can connect with credentials like this:
 ```
-ws://localhost:8080/?name=$myPlayerName&id=$myId&password=$myPassword
+ws://localhost:8080/?name=$myPlayerName&playerId=$myId&password=$myPassword
 ```
 
 ### Server commands:
 - getRooms - get open rooms list. No data.
 - changeName - change player name. Data: new name string.
 - createRoom - create new room. Data: { name: "room name", maxPlayers: number, password: string or null, gameData: object or null}
-- enterRoom - enter selected room. Data: { id:"roomId", password: "room password" }
+- enterRoom - enter selected room. Data: { roomId:"roomId", password: "room password" }
 - leaveRoom - leave current room. No data.
 - getPlayers - get selected players data. Data: array of players ids.
 - sendChatMsg - send chat message to current room. Data: any string.
@@ -64,12 +64,12 @@ Data: {
 - roomCreated - Data: object with created room information
 - onGetRooms - Data: array with available rooms information
 - onRoomEnter - when successfully entered room. Data: room info
-- accountCreated - when someone connects without credentials server creates new account. Data: { name: playerName, id: playerId, password: password }
+- accountCreated - when someone connects without credentials server creates new account. Data: { name: playerName, playerId: playerId, password: password }
 - onGetPlayers - Data: array of players
 - playerEnter - when another player enters current room. Data: new player info
 - error - when smth goes wrong. Data: { text: 'error text', code: "error code" }
 - playerLeft - when someone lefts current room. Data: playerId
-- nameChanged - when someone changes name. Data: { name: new name, id: playerId }
+- nameChanged - when someone changes name. Data: { name: new name, playerId: playerId }
 - newGameState - when room ownes shares game state. Data: any object
 - messageFromPlayer - when someone sends you game data. Data: { from: playerId, msg: any object }
 - chatMsg - chat message. Data: { text: any string, from: playerId }

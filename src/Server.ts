@@ -22,7 +22,7 @@ export class Server {
   public lobby = new Lobby()
   public rooms:roomsObj = {}
 
-  private totalBytes = 0;
+  private totalBytes = 0
 
   constructor(DevMode:boolean){
     if(!!Server.instance){
@@ -55,10 +55,10 @@ export class Server {
       ws.on('message', (message, isBinary) => {
         if(isBinary){
           const r = Server.instance.rooms[pl.roomId || ""]
-          if(!r) return;
+          if(!r) return
           
           r.sendBinaryToOthers(message, pl.playerId)
-          this.totalBytes += (message as Buffer).length;
+          this.totalBytes += (message as Buffer).length
           if(this.DevMode){
             console.log("binary message:", (message as Buffer).length + "/" + this.totalBytes)
           }
@@ -82,7 +82,10 @@ export class Server {
           logMessage(pl.playerName + ' is not answering')
           ws.close()
         } else if(Date.now() - lastMsgTime > 10000){
-          pl.send({ method: "Ping" })
+          pl.send({
+            method: "Ping",
+            data: Date.now()
+          })
         }
       }, 10000)
     })

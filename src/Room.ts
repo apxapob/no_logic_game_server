@@ -1,5 +1,6 @@
 import { Server } from "./Server"
 import { Player, WSMessage } from "./Player"
+import { generateUID } from "./Utils"
 import { RawData } from "ws"
 
 export class Room {
@@ -13,7 +14,7 @@ export class Room {
   public gameStarted:boolean = false
 
   constructor(name:string, ownerId:string, maxPlayers = -1, password = null, gameData:string|object|null = null){
-    this.roomId = Date.now().toString()
+    this.roomId = generateUID()
     this.ownerId = ownerId
     this.roomName = name || 'Room'
     this.password = password
@@ -25,7 +26,7 @@ export class Room {
 
   toNetObject() {
     return {
-      id: this.roomId,
+      roomId: this.roomId,
       ownerId: this.ownerId,
       name: this.roomName,
       players: this.playerIds,
@@ -82,7 +83,7 @@ export class Room {
     if(pl.playerId !== this.ownerId){ return }
     
     this.ownerId = this.playerIds.find(
-      id => id !== pl.playerId && Server.instance.players[id]?.roomId === this.roomId
+      playerId => playerId !== pl.playerId && Server.instance.players[playerId]?.roomId === this.roomId
     ) ?? null
     if(this.ownerId === null){
       delete Server.instance.rooms[this.roomId]

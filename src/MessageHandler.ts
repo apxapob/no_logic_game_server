@@ -17,7 +17,7 @@ const getPlayersJSON = (playerIds:Array<string>) => ({
   method: 'onGetPlayers',
   data: Object.values(Server.instance.players)
               .map(pl => pl.toNetObject())
-              .filter(pl => playerIds.includes(pl.id))
+              .filter(pl => playerIds.includes(pl.playerId))
 })
 
 export const MessageHandler:handlerObj = {
@@ -29,10 +29,10 @@ export const MessageHandler:handlerObj = {
     if(!r) return
     r.sendToRoom({
       method: 'nameChanged',
-      data: { name: pl.playerName, id: pl.playerId }
+      data: { name: pl.playerName, playerId: pl.playerId }
     })
   },
-  enterRoom: (pl:Player, data:any) => Server.instance.enterRoom(pl, data.id, data.password),
+  enterRoom: (pl:Player, data:any) => Server.instance.enterRoom(pl, data.roomId, data.password),
   leaveRoom: (pl:Player) => Server.instance.onPlayerLeave(pl),
   getPlayers: (pl:Player, data:any) => pl.send(getPlayersJSON(data || [])),
   sendChatMsg: (pl:Player, data:any) => {

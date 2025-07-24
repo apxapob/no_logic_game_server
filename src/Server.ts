@@ -144,20 +144,20 @@ export class Server {
   registerPlayer(ws:WebSocket, url:string):Player|null {
     const loginParams = new URLSearchParams(url.substr(1))
     const name = loginParams.get("name") || ("Player " + (Date.now()%1296).toString(36).toUpperCase())
-    const id = loginParams.get("id")
+    const playerId = loginParams.get("playerId")
     const password = loginParams.get("password")
     
-    if(!id || !this.players[id]){
-      const pl = new Player(name, id, null, ws)
+    if(!playerId || !this.players[playerId]){
+      const pl = new Player(name, playerId, null, ws)
       pl.send({
         method: 'accountCreated',
-        data: { name: pl.playerName, id: pl.playerId, password: pl.password }
+        data: { name: pl.playerName, playerId: pl.playerId, password: pl.password }
       })
       this.players[pl.playerId] = pl
       return pl
     } 
       
-    const oldPlayer = this.players[id]
+    const oldPlayer = this.players[playerId]
     if(oldPlayer){
       if(oldPlayer.password === password) {
         oldPlayer.playerName = name
@@ -167,7 +167,7 @@ export class Server {
       return null
     } 
     
-    const newPlayer = new Player(name, id, password, ws)
+    const newPlayer = new Player(name, playerId, password, ws)
     this.players[newPlayer.playerId] = newPlayer
     return newPlayer
   }

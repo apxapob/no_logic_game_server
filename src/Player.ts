@@ -1,13 +1,7 @@
 import WebSocket, { RawData } from "ws"
+import { generateUID } from "./Utils"
 
-const generateUID = () => {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8)
-    return v.toString(16)
-  })
-}
-
-const generatePassword = () => 'xxxxxxxxxxxxxxxx'.replace(/x/g, 
+const generatePassword = () => 'xxxxxxxxxxxxxxxx'.replace(/x/g,
   c => (Math.random() * 36 | 0).toString(36)
 )
 
@@ -23,10 +17,10 @@ export class Player {
   public ws:WebSocket|null
   public roomId:string|null = null
 
-  constructor(name:string, id:string|null, password:string|null, ws:WebSocket){
+  constructor(name:string, playerId:string|null, password:string|null, ws:WebSocket){
     this.playerName = name
     this.ws = ws
-    this.playerId = id || generateUID()
+    this.playerId = playerId || generateUID()
     this.password = password || generatePassword()
   }
 
@@ -42,7 +36,7 @@ export class Player {
 
   toNetObject() {
     return {
-      id: this.playerId,
+      playerId: this.playerId,
       name: this.playerName,
     }
   }

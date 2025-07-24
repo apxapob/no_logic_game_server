@@ -112,7 +112,7 @@ export const MessageHandler:handlerObj = {
     const newRoom = new Room(data.name, pl.playerId, data.maxPlayers, data.password, data.gameData)
     Server.instance.rooms[newRoom.roomId] = newRoom
     Server.instance.enterRoom(pl, newRoom.roomId, newRoom.password)
-    Server.instance.broadcast({
+    Server.instance.broadCastToLobby({
       method: 'roomCreated',
       data: newRoom.toNetObject()
     })

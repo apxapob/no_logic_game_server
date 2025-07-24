@@ -14,7 +14,7 @@ type roomsObj = {
 
 export class Server {
   public static instance:Server
-  
+
   private wsServer:WebSocket.Server
   private DevMode:boolean
 
@@ -35,7 +35,7 @@ export class Server {
     this.wsServer.on('connection', (ws, req) => {
       const pl = this.registerPlayer(ws, req.url || '')
       logMessage('new connection: ' + pl?.playerName)
-      
+
       if(pl === null){
         ws.send(
           JSON.stringify({ method: 'wrongPassword' })
@@ -45,7 +45,7 @@ export class Server {
       }
 
       pl.send({
-        method: 'onConnected', 
+        method: 'onConnected',
         data: {
           online: this.wsServer.clients.size
         }
@@ -56,7 +56,7 @@ export class Server {
         if(isBinary){
           const r = Server.instance.rooms[pl.roomId || ""]
           if(!r) return
-          
+
           r.sendBinaryToOthers(message, pl.playerId)
           this.totalBytes += (message as Buffer).length
           if(this.DevMode){
@@ -71,7 +71,7 @@ export class Server {
       ws.on('error', e => logMessage('socket error', e))
       ws.on('close', () => {
         this.onPlayerLeave(pl)
-        
+
         pl.ws = null
         logMessage(pl.playerName + ' disconnected')
         clearInterval(intervalId)
@@ -104,11 +104,11 @@ export class Server {
   onPlayerLeave(pl:Player){
     const room = this.rooms[pl.roomId || '']
     if(!room){return}
-    
+
     if(room.gameStarted){
       room.playerDisconnected(pl)
     } else {
-      room.removePlayer(pl) 
+      room.removePlayer(pl)
     }
   }
 
@@ -126,6 +126,15 @@ export class Server {
     this.wsServer.clients.forEach(
       ws => ws.send(json)
     )
+  }
+
+  broadCastToLobby(msg:any){
+    const json = JSON.stringify(msg)
+    for (const playerId in this.players) {
+      if (!this.players[playerId].roomId) {
+        this.players[playerId].sendString(json)
+      }
+    }
   }
 
   enterRoom(pl:Player, roomId:string, password:string|null){
@@ -149,7 +158,7 @@ export class Server {
     const name = loginParams.get("name") || ("Player " + (Date.now()%1296).toString(36).toUpperCase())
     const playerId = loginParams.get("playerId")
     const password = loginParams.get("password")
-    
+
     if(!playerId || !this.players[playerId]){
       const pl = new Player(name, playerId, null, ws)
       pl.send({
@@ -158,8 +167,8 @@ export class Server {
       })
       this.players[pl.playerId] = pl
       return pl
-    } 
-      
+    }
+
     const oldPlayer = this.players[playerId]
     if(oldPlayer){
       if(oldPlayer.password === password) {
@@ -168,11 +177,10 @@ export class Server {
         return oldPlayer
       }
       return null
-    } 
-    
+    }
+
     const newPlayer = new Player(name, playerId, password, ws)
     this.players[newPlayer.playerId] = newPlayer
     return newPlayer
   }
-
 }

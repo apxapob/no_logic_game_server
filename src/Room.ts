@@ -212,6 +212,11 @@ export class Room {
     this.gameStarted = true
     this.sendToRoom({ method: 'gameStarted', data })
 
+    Server.instance.broadCastToLobby({
+      method: 'roomBlock',
+      data: this.roomId
+    });
+
     this.RTTintervalId = setInterval(() => {
       if (this.gameStarted) {
         this.broadcastRTT()
@@ -221,6 +226,12 @@ export class Room {
 
   dispose(){
     this.RTTintervalId && clearInterval(this.RTTintervalId)
+
+    Server.instance.broadCastToLobby({
+      method: 'roomDeleted',
+      data: this.roomId
+    });
+
     delete Server.instance.rooms[this.roomId]
   }
 }

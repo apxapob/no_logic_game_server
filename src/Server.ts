@@ -16,7 +16,8 @@ export class Server {
   public static instance:Server
 
   private wsServer:WebSocket.Server
-  private DevMode:boolean
+  
+  public DevMode:boolean
 
   public players:playersObj = {}
   public lobby = new Lobby()
@@ -81,12 +82,13 @@ export class Server {
         if(Date.now() - lastMsgTime > 50000){
           logMessage(pl.playerName + ' is not answering')
           ws.close()
-        } else if(Date.now() - lastMsgTime > 10000){
-          pl.send({
-            method: "Ping",
-            data: Date.now()
-          })
-        }
+          clearInterval(intervalId)
+          return
+        } 
+        pl.send({
+          method: "Ping",
+          data: Date.now()
+        })
       }, 10000)
     })
 
@@ -113,6 +115,10 @@ export class Server {
   }
 
   onGetMessage(pl:Player, msg:any){
+    if(this.DevMode){
+      console.log("Got message:", msg, "from", pl.playerName + " (" + pl.playerId + ")")
+    }
+
     const handler = MessageHandler[msg.method]
     if(handler){
       handler(pl, msg.data)

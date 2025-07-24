@@ -1,5 +1,6 @@
 import WebSocket, { RawData } from "ws"
 import { generateUID } from "./Utils"
+import { Server } from "./Server";
 
 const generatePassword = () => 'xxxxxxxxxxxxxxxx'.replace(/x/g,
   c => (Math.random() * 36 | 0).toString(36)
@@ -27,11 +28,19 @@ export class Player {
   }
 
   send(msg:WSMessage){
+    if(Server.instance.DevMode){
+      console.log("Send", msg, "to", this.playerName + " (" + this.playerId + ")")
+    }
     this.ws?.send( JSON.stringify(msg) )
   }
+
   sendString(msg:String){
+    if(Server.instance.DevMode){
+      console.log("Send", msg, "to", this.playerName + " (" + this.playerId + ")")
+    }
     this.ws?.send(msg)
   }
+
   sendBinary(bytes:RawData){
     this.ws?.send(bytes)
   }

@@ -23,6 +23,10 @@ export class Room {
     if(maxPlayers > 0){
       this.maxPlayers = maxPlayers
     }
+
+    this.RTTintervalId = setInterval(() => {
+      this.broadcastRTT()
+    }, 10000)
   }
 
   toNetObject() {
@@ -33,14 +37,14 @@ export class Room {
       players: this.playerIds,
       maxPlayers: this.maxPlayers,
       gameData: this.gameData,
-      gameStarted: this.gameStarted
+      gameStarted: this.gameStarted,
+      rtt: this.ownerId ? Server.instance.players[this.ownerId].rtt : null
     }
   }
 
   sendToRoom(msg:WSMessage){
-    const json = JSON.stringify(msg)
     this.playerIds.forEach(
-      plId => Server.instance.players[plId]?.sendString(json)
+      plId => Server.instance.players[plId]?.send(msg)
     )
   }
 
@@ -178,8 +182,6 @@ export class Room {
   }
 
   broadcastRTT() {
-    if (!this.gameStarted) return
-
     const rttData: Record<string, number> = {}
     this.playerIds.forEach(playerId => {
       const player = Server.instance.players[playerId]
@@ -216,12 +218,6 @@ export class Room {
       method: 'roomBlock',
       data: this.roomId
     });
-
-    this.RTTintervalId = setInterval(() => {
-      if (this.gameStarted) {
-        this.broadcastRTT()
-      }
-    }, 10000)
   }
 
   dispose(){

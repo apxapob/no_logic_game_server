@@ -13,7 +13,8 @@ export class Room {
   public playerIds:Array<string> = []
   public gameStarted:boolean = false
   public RTTintervalId:NodeJS.Timeout|null = null
-
+  public roomMeta:any = null
+  
   constructor(name:string, ownerId:string, maxPlayers = -1, password?:string, gameData:string|object|null = null){
     this.roomId = generateUID()
     this.ownerId = ownerId
@@ -38,7 +39,8 @@ export class Room {
       maxPlayers: this.maxPlayers,
       gameData: this.gameData,
       gameStarted: this.gameStarted,
-      rtt: this.ownerId ? Server.instance.players[this.ownerId].rtt : null
+      rtt: this.ownerId ? Server.instance.players[this.ownerId].rtt : null,
+      metaData: this.roomMeta
     }
   }
 

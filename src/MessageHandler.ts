@@ -122,5 +122,15 @@ export const MessageHandler:handlerObj = {
       method: 'roomCreated',
       data: newRoom.toNetObject()
     })
+  },
+  setRoomMeta: (pl:Player, data:any) => {
+    const r = Server.instance.rooms[pl.roomId || ""]
+    if (!r || r.ownerId !== pl.playerId) return
+
+    r.roomMeta = data
+    r.sendToRoom({
+      method: 'onSetRoomMeta',
+      data: r.roomMeta
+    })
   }
 }

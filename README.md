@@ -120,6 +120,11 @@ ws://localhost:8080/?name=$myPlayerName&playerId=$myId&password=$myPassword
     }
     ```
 
+#### Room Metadata
+
+- **setRoomMeta**: Set metadata for the current room (only by room owner).
+  - Data: any object with metadata
+
 #### Networking
 
 - **Pong**: Respond to server ping with timestamp.
@@ -236,5 +241,8 @@ ws://localhost:8080/?name=$myPlayerName&playerId=$myId&password=$myPassword
 
 - **gameStateRequested**: Sent to room owner when a player requests the game state.
   - Data: player object
+
+- **onSetRoomMeta**: Sent when room metadata is set by the owner.
+  - Data: object with room metadata
 
 - **wrongPassword**: Sent when wrong password is provided during connection.

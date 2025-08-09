@@ -18,6 +18,7 @@ export class Player {
   public ws:WebSocket|null
   public roomId:string|null = null
   public rtt:number|null = null
+  public roomEntryTimestamp:number|null = null
 
   constructor(name:string, playerId:string|null, password:string|null, ws:WebSocket){
     this.playerName = name
@@ -25,6 +26,7 @@ export class Player {
     this.playerId = playerId || generateUID()
     this.password = password || generatePassword()
     this.rtt = null
+    this.roomEntryTimestamp = null
   }
 
   send(msg:WSMessage){
@@ -49,7 +51,8 @@ export class Player {
     return {
       playerId: this.playerId,
       name: this.playerName,
-      rtt: this.rtt
+      rtt: this.rtt,
+      roomEntryTimestamp: this.roomEntryTimestamp
     }
   }
 }

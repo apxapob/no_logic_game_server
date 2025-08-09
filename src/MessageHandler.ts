@@ -18,6 +18,12 @@ const getPlayersJSON = (playerIds:Array<string>) => ({
   data: Object.values(Server.instance.players)
               .map(pl => pl.toNetObject())
               .filter(pl => playerIds.includes(pl.playerId))
+              .sort((a, b) => {
+                if (a.roomEntryTimestamp === null || b.roomEntryTimestamp === null) {
+                  return 0;
+                }
+                return a.roomEntryTimestamp - b.roomEntryTimestamp;
+              })
 })
 
 export const MessageHandler:handlerObj = {

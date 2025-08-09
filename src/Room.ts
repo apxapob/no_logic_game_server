@@ -66,6 +66,7 @@ export class Room {
   playerDisconnected(pl:Player){
     this.sendToRoom({ method: 'playerDisconnected', data: pl.playerId })
     pl.roomId = null
+    pl.roomEntryTimestamp = null // Reset timestamp when disconnecting
     if(pl.playerId !== this.ownerId){ return }
     
     this.ownerId = this.playerIds.find(
@@ -83,6 +84,7 @@ export class Room {
 
   removePlayer(pl:Player){
     pl.roomId = null
+    pl.roomEntryTimestamp = null // Reset timestamp when leaving room
     const playerIdx = this.playerIds.indexOf(pl.playerId)
     if(playerIdx === -1){ return }
 
@@ -122,8 +124,9 @@ export class Room {
       method: 'playerEnter',
       data: pl.toNetObject()
     })
-    
+
     pl.roomId = this.roomId
+    pl.roomEntryTimestamp = Date.now() // Set the entry timestamp on reconnect
     pl.send({
       method: 'onRoomEnter',
       data: this.toNetObject()
@@ -175,6 +178,7 @@ export class Room {
     
     this.playerIds.push(pl.playerId)
     pl.roomId = this.roomId
+    pl.roomEntryTimestamp = Date.now() // Set the entry timestamp
     pl.send({
       method: 'onRoomEnter',
       data: this.toNetObject()

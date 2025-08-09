@@ -88,14 +88,16 @@ ws://localhost:8080/?name=$myPlayerName&playerId=$myId&password=$myPassword
   - Data: `new name string`
 
 - **getPlayers**: Get selected players' data.
-  - Data: array of player IDs
+  - Data: array of player IDs (or null for all players)
+
 
 #### Gameplay Commands
 
 - **sendChatMsg**: Send a chat message to the current room.
   - Data: any string
 
-- **startGame**: Start the game (only by room owner). No data required.
+- **startGame**: Start the game (only by room owner).
+  - Data: any object with initial game state
 
 - **shareGameState**: Share full game state with other players (only by room owner).
   - Data:
@@ -128,6 +130,12 @@ ws://localhost:8080/?name=$myPlayerName&playerId=$myId&password=$myPassword
 #### Connection & Authentication
 
 - **onConnected**: Sent after successful connection.
+  - Data:
+    ```js
+    {
+      online: number of currently connected players
+    }
+    ```
 
 - **accountCreated**: When someone connects without credentials.
   - Data:
@@ -216,3 +224,17 @@ ws://localhost:8080/?name=$myPlayerName&playerId=$myId&password=$myPassword
 
 - **Ping**: Server sends Ping message to all clients every 10 seconds to check connection status.
   - Data: server timestamp in milliseconds. You need to respond to this message with a Pong message and send back the same timestamp for correct RTT (Round Trip Time) measurement.
+
+- **error**: Sent when an error occurs.
+  - Data:
+    ```js
+    {
+      text: error message,
+      code: error code
+    }
+    ```
+
+- **gameStateRequested**: Sent to room owner when a player requests the game state.
+  - Data: player object
+
+- **wrongPassword**: Sent when wrong password is provided during connection.

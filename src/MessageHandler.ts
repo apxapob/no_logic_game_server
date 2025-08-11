@@ -13,11 +13,11 @@ const getRoomsJSON = (playerId:string) => ({
               .map(r => r.toNetObject())
 })
 
-const getPlayersJSON = (playerIds:Array<string>) => ({
+const getPlayersJSON = (playerIds?:string[]) => ({
   method: 'onGetPlayers',
   data: Object.values(Server.instance.players)
+              .filter(pl => !playerIds || playerIds.includes(pl.playerId))            
               .map(pl => pl.toNetObject())
-              .filter(pl => playerIds.includes(pl.playerId))
               .sort((a, b) => {
                 if (a.roomEntryTimestamp === null || b.roomEntryTimestamp === null) {
                   return 0;
@@ -43,7 +43,7 @@ export const MessageHandler:handlerObj = {
   },
   enterRoom: (pl:Player, data:{ roomId:string, password:string }) => Server.instance.enterRoom(pl, data.roomId, data.password),
   leaveRoom: (pl:Player) => Server.instance.onPlayerLeave(pl),
-  getPlayers: (pl:Player, data:any) => pl.send(getPlayersJSON(data || [])),
+  getPlayers: (pl:Player, data?:string[]) => pl.send(getPlayersJSON(data)),
   sendChatMsg: (pl:Player, data:string) => {
     const r = Server.instance.rooms[pl.roomId || ""]
     if(!r) return

@@ -23,8 +23,6 @@ export class Server {
   public lobby = new Lobby()
   public rooms:roomsObj = {}
 
-  private totalBytes = 0
-
   constructor(DevMode:boolean){
     if(!!Server.instance){
       throw new Error("Server has already started")
@@ -55,14 +53,17 @@ export class Server {
       let lastMsgTime = Date.now()
       ws.on('message', (message, isBinary) => {
         if(isBinary){
+          if(this.DevMode){
+            console.log("binary message:", (message as Buffer).length, 'bytes from', pl.playerName, "(" + pl.playerId + ")")
+          }
+
           const r = Server.instance.rooms[pl.roomId || ""]
-          if(!r) return
+          if(!r) {
+            console.log("Can't broadcast binary message: Player", pl.playerName, "(" + pl.playerId + ") not in room.")
+            return
+          }
 
           r.sendBinaryToOthers(message, pl.playerId)
-          this.totalBytes += (message as Buffer).length
-          if(this.DevMode){
-            console.log("binary message:", (message as Buffer).length + "/" + this.totalBytes)
-          }
         } else {
           const msg = JSON.parse(message.toString())
           this.onGetMessage(pl, msg)

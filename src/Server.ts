@@ -65,7 +65,12 @@ export class Server {
             return
           }
 
-          r.sendBinaryToOthers(message, pl.playerId)
+          if(this.DevMode && this.SendDelay > 0){
+            setTimeout(() => r.sendBinaryToOthers(message, pl.playerId), this.SendDelay)
+          } else {
+            r.sendBinaryToOthers(message, pl.playerId)
+          }
+          
         } else {
           const msg = JSON.parse(message.toString())
           this.onGetMessage(pl, msg)

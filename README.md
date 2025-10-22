@@ -35,6 +35,7 @@ Server sends and receives JSON strings of this format:
 {
   method: "methodName",
   data: {...method parameters}
+  sendDelay: 100 // optional delay in ms
 }
 ```
 

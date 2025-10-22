@@ -29,7 +29,7 @@ export class Server {
     }
     this.DevMode = DevMode
     Server.instance = this
-    this.wsServer = new WebSocket.Server({ port: 3333 })
+    this.wsServer = new WebSocket.Server({ port: 8080 })
 
     this.wsServer.on('connection', (ws, req) => {
       const pl = this.registerPlayer(ws, req.url || '')
@@ -122,7 +122,11 @@ export class Server {
 
     const handler = MessageHandler[msg.method]
     if(handler){
-      handler(pl, msg.data)
+      if(msg.sendDelay){
+        setTimeout(() => handler(pl, msg.data), msg.sendDelay)
+      } else {
+        handler(pl, msg.data)
+      }
     } else {
       logMessage("unknown message:", msg)
     }

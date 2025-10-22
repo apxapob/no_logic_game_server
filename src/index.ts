@@ -6,7 +6,7 @@ const DevMode = process.argv.includes("dev")
 
 export const logMessage = (message?: any, ...optionalParams: any[]) => {
   console.log(
-    `[${new Date().toLocaleString()}]`, 
+    `[${new Date().toLocaleTimeString()}]`, 
     message, ...optionalParams
   )
 }

@@ -18,16 +18,18 @@ export class Server {
   private wsServer:WebSocket.Server
   
   public DevMode:boolean
+  public SendDelay:number
 
   public players:playersObj = {}
   public lobby = new Lobby()
   public rooms:roomsObj = {}
 
-  constructor(DevMode:boolean){
+  constructor(DevMode:boolean, SendDelay:number){
     if(!!Server.instance){
       throw new Error("Server has already started")
     }
     this.DevMode = DevMode
+    this.SendDelay = SendDelay
     Server.instance = this
     this.wsServer = new WebSocket.Server({ port: 8080 })
 
@@ -94,6 +96,9 @@ export class Server {
     })
 
     logMessage("server started")
+    if(this.DevMode && this.SendDelay > 0){
+      logMessage("send delay:", this.SendDelay, 'ms')
+    }
   }
 
   stop(...args:any){
@@ -122,8 +127,8 @@ export class Server {
 
     const handler = MessageHandler[msg.method]
     if(handler){
-      if(msg.sendDelay){
-        setTimeout(() => handler(pl, msg.data), msg.sendDelay)
+      if(this.DevMode && this.SendDelay > 0){
+        setTimeout(() => handler(pl, msg.data), this.SendDelay)
       } else {
         handler(pl, msg.data)
       }

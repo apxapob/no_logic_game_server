@@ -3,6 +3,7 @@ import { Server } from "./Server"
 console.clear()
 
 const DevMode = process.argv.includes("dev")
+const SendDelay = Number(process.argv.find(arg => arg.startsWith('delay='))?.substring(6) ?? 0)
 
 export const logMessage = (message?: any, ...optionalParams: any[]) => {
   console.log(
@@ -11,7 +12,7 @@ export const logMessage = (message?: any, ...optionalParams: any[]) => {
   )
 }
 
-new Server(DevMode)
+new Server(DevMode, SendDelay)
 
 const exitHandler = (...args:any) => {
   Server.instance?.stop(args)

@@ -1,5 +1,9 @@
 # Hardening verification
 
+This records the original implementation before independent review. See
+[review-followup.md](review-followup.md) for the two subsequent P1 fixes, pagination
+contract update, and the expanded 63-test verification.
+
 Verification of the integrated change, not an independent review or approval.
 Implementation was split across four worktrees (core, tooling, client/docs, regression
 tests), then integrated and self-checked by the lead. A tester executed final checks.

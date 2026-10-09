@@ -63,7 +63,7 @@ export class Server {
       socket.on('error', () => socket.destroy());
       socket.once('close', () => this.transports.delete(socket));
     });
-    const wss = new WebSocketServer({ noServer: true, maxPayload: this.options.maxPayloadBytes, perMessageDeflate: false });
+    const wss = new WebSocketServer({ noServer: true, maxPayload: this.options.maxPayloadBytes, perMessageDeflate: false, autoPong: false });
     this.wss = wss;
     wss.on('error', () => this.log('websocket server error'));
     wss.on('connection', ws => this.connected(ws));
@@ -177,6 +177,8 @@ export class Server {
       messages: 0, delayedBytes: 0, timers: new Set() };
     this.connections.set(ws, c);
     ws.on('message', (raw, binary) => this.receive(c, raw, binary));
+    ws.on('ping', data => this.control(c, data, true));
+    ws.on('pong', data => this.control(c, data, false));
     ws.on('error', () => { this.log('socket error'); ws.terminate(); });
     ws.on('close', () => {
       this.clearDelays(c); this.connections.delete(ws);
@@ -192,16 +194,29 @@ export class Server {
     for (const timer of c.timers) clearTimeout(timer);
     c.timers.clear(); c.delayedBytes = 0;
   }
-  private receive(c: Connection, raw: RawData, binary: boolean): void {
-    if (!this.current(c)) return;
+  private allowInbound(c: Connection): boolean {
+    if (!this.current(c)) return false;
     const now = Date.now();
     if (now - c.rateAt >= 1000) { c.rateAt = now; c.messages = 0; }
-    if (++c.messages > this.options.maxMessagesPerSecond) { c.ws.close(1008, 'Rate limit'); return; }
+    // Termination cannot itself enqueue a close frame behind a saturated socket.
+    if (++c.messages > this.options.maxMessagesPerSecond) { c.ws.terminate(); return false; }
+    c.activity = now;
+    return true;
+  }
+  private control(c: Connection, bytes: Buffer, reply: boolean): void {
+    if (!this.allowInbound(c) || !reply) return;
+    // RFC control replies bypass send(), so account for their two-byte header here.
+    if (!this.reserveOutput(c, bytes.length + 2)) return;
+    try { c.ws.pong(bytes, false, error => { if (error) c.ws.terminate(); }); }
+    catch { c.ws.terminate(); }
+  }
+  private receive(c: Connection, raw: RawData, binary: boolean): void {
+    if (!this.allowInbound(c)) return;
     const bytes = Array.isArray(raw) ? Buffer.concat(raw) : raw instanceof ArrayBuffer ? Buffer.from(raw) : raw;
     if (bytes.length > this.options.maxPayloadBytes) { c.ws.close(1009, 'Message too large'); return; }
-    c.activity = now;
     if (binary) {
       if (!c.player) { this.error(c, 'invalid_message'); return; }
+      if (!this.messageFits(bytes.length)) { this.error(c, 'payload_too_large'); return; }
       const p = c.player;
       this.schedule(c, bytes.length, () => {
         const room = this.activeRoom(p);
@@ -215,13 +230,16 @@ export class Server {
     if (!validateMessage(value, this.options.maxRoomPlayers, this.options.maxAccounts)) {
       this.error(c, 'invalid_message'); return;
     }
+    // Short number literals can expand substantially after JSON.parse/stringify.
+    const canonicalBytes = Buffer.byteLength(JSON.stringify(value));
+    if (canonicalBytes > this.options.maxPayloadBytes) { this.error(c, 'payload_too_large'); return; }
     if (!c.player) {
       if (value.method !== 'authenticate') { this.error(c, 'invalid_message'); return; }
       this.authenticate(c, value.data); return;
     }
     if (value.method === 'authenticate') { this.error(c, 'invalid_message'); return; }
     if (value.method === 'Pong') { this.handle(c.player, value, c); return; }
-    this.schedule(c, bytes.length, () => { if (c.player) this.handle(c.player, value, c); },
+    this.schedule(c, canonicalBytes, () => { if (c.player) this.handle(c.player, value, c); },
       !roomIndependentMethods.has(value.method));
   }
   private schedule(c: Connection, size: number, action: () => void, roomScoped = true): void {
@@ -274,11 +292,32 @@ export class Server {
     const activeRoom = this.activeRoom(p);
     if (activeRoom) this.sendConnection(c, { method: 'onRoomEnter', data: this.roomDto(activeRoom) });
   }
-  private sendConnection(c: Connection, message: WSMessage): void { this.write(c, JSON.stringify(message), false); }
+  private messageFits(size: number): boolean {
+    // Ten bytes cover the largest unmasked data-frame header.
+    return size <= this.options.maxPayloadBytes && size + 10 <= this.options.maxBufferedBytes;
+  }
+  private encode(message: WSMessage): string | null {
+    const json = JSON.stringify(message);
+    return this.messageFits(Buffer.byteLength(json)) ? json : null;
+  }
+  private prepareRelay(p: Player, message: WSMessage): string | null {
+    const json = this.encode(message);
+    if (json === null) this.playerError(p, 'payload_too_large');
+    return json;
+  }
+  private sendConnection(c: Connection, message: WSMessage): void {
+    const json = this.encode(message) ?? this.encode({ method: 'error', data: { code: 'response_too_large', text: 'response_too_large' } });
+    if (json !== null) this.write(c, json, false);
+  }
+  private reserveOutput(c: Connection, size: number): boolean {
+    if (!this.current(c)) return false;
+    if (c.ws.bufferedAmount + size > this.options.maxBufferedBytes) { c.ws.terminate(); return false; }
+    return true;
+  }
   private write(c: Connection, bytes: string | Buffer, binary: boolean): void {
-    if (!this.current(c)) return;
     const size = typeof bytes === 'string' ? Buffer.byteLength(bytes) : bytes.length;
-    if (c.ws.bufferedAmount + size > this.options.maxBufferedBytes) { c.ws.close(1008, 'Backpressure'); return; }
+    // An oversized server message is not evidence that its recipient is slow.
+    if (!this.messageFits(size) || !this.reserveOutput(c, size + 10)) return;
     try { c.ws.send(bytes, { binary }, error => { if (error) c.ws.terminate(); }); }
     catch { c.ws.terminate(); }
   }
@@ -286,7 +325,10 @@ export class Server {
     const c = p.ws ? this.connections.get(p.ws) : undefined;
     if (c) this.write(c, bytes, binary);
   }
-  private send(p: Player, message: WSMessage): void { this.sendBytes(p, JSON.stringify(message)); }
+  private send(p: Player, message: WSMessage): void {
+    const c = p.ws ? this.connections.get(p.ws) : undefined;
+    if (c) this.sendConnection(c, message);
+  }
   private error(c: Connection, code: string): void { this.sendConnection(c, { method: 'error', data: { code, text: code } }); }
   private playerError(p: Player, code: string): void { this.send(p, { method: 'error', data: { code, text: code } }); }
   private activeRoom(p: Player): Room | undefined {
@@ -301,15 +343,44 @@ export class Server {
     }
     return members;
   }
-  private broadcast(room: Room, message: WSMessage, except?: string, targets?: Set<string>): void {
-    const json = JSON.stringify(message);
+  private broadcastJson(room: Room, json: string, except?: string, targets?: Set<string>): void {
     for (const p of this.members(room)) if (p.playerId !== except && (!targets || targets.has(p.playerId))) this.sendBytes(p, json);
   }
+  private broadcast(room: Room, message: WSMessage, except?: string): void {
+    const json = this.encode(message);
+    if (json !== null) this.broadcastJson(room, json, except);
+  }
   private lobby(message: WSMessage): void {
-    const json = JSON.stringify(message);
-    for (const p of this.online) if (p.roomId === null) this.sendBytes(p, json);
+    const json = this.encode(message);
+    if (json !== null) for (const p of this.online) if (p.roomId === null) this.sendBytes(p, json);
   }
   private roomDto(room: Room) { return room.toNetObject(this.players.get(room.ownerId)?.rtt ?? null); }
+  private roomFits(room: Room, metaData: unknown = room.roomMeta): boolean {
+    // Reserve growth from future joins, RTT values and the pagination envelope.
+    // Otherwise an accepted room could become unreadable merely by filling up.
+    // Reject impossible capacities arithmetically before allocating placeholder IDs.
+    if (!this.messageFits(room.maxPlayers * (room.ownerId.length + 3) + 1)) return false;
+    const dto = { ...this.roomDto(room), metaData, gameStarted: false,
+      players: Array<string>(room.maxPlayers).fill(room.ownerId), rtt: Number.MAX_SAFE_INTEGER };
+    return this.encode({ method: 'onGetRooms', data: [dto], nextCursor: room.roomId }) !== null;
+  }
+  private roomPage(p: Player, after?: string): void {
+    const rooms = [...this.rooms.values()]
+      .filter(r => (!after || r.roomId > after) && (!r.gameStarted || r.active.has(p.playerId) || r.reservations.has(p.playerId)))
+      .sort((a, b) => a.roomId < b.roomId ? -1 : a.roomId > b.roomId ? 1 : 0);
+    const data: ReturnType<Server['roomDto']>[] = [];
+    let nextCursor: string | null = null;
+    for (let i = 0; i < rooms.length; i++) {
+      const dto = this.roomDto(rooms[i]);
+      const cursor = i + 1 < rooms.length ? dto.roomId : null;
+      if (this.encode({ method: 'onGetRooms', data: [...data, dto], nextCursor: cursor }) === null) {
+        if (data.length === 0) { this.playerError(p, 'response_too_large'); return; }
+        break;
+      }
+      data.push(dto); nextCursor = cursor;
+    }
+    this.send(p, { method: 'onGetRooms', data, nextCursor });
+  }
   private enter(p: Player, id: string, password: unknown): void {
     if (p.roomId) { this.playerError(p, p.roomId === id ? 'already_in_room' : 'in_other_room'); return; }
     const room = this.rooms.get(id);
@@ -355,7 +426,7 @@ export class Server {
       return;
     }
     switch (message.method) {
-      case 'getRooms': this.send(p, { method: 'onGetRooms', data: [...this.rooms.values()].filter(r => !r.gameStarted || r.active.has(p.playerId) || r.reservations.has(p.playerId)).map(r => this.roomDto(r)) }); return;
+      case 'getRooms': this.roomPage(p, typeof record.after === 'string' ? record.after.toLowerCase() : undefined); return;
       case 'getPlayers': {
         const selected = Array.isArray(d) ? d.flatMap(id => {
           const player = typeof id === 'string' ? this.players.get(id) : undefined;
@@ -380,6 +451,7 @@ export class Server {
         if (this.rooms.size >= this.options.maxRooms) { this.playerError(p, 'limit_exceeded'); return; }
         if (typeof record.name !== 'string' || typeof record.maxPlayers !== 'number') return;
         const room = new Room(record.name, p.playerId, record.maxPlayers, typeof record.password === 'string' ? record.password : null, record.gameData ?? null);
+        if (!this.roomFits(room)) { this.playerError(p, 'payload_too_large'); return; }
         this.rooms.set(room.roomId, room); this.enter(p, room.roomId, room.password);
         this.lobby({ method: 'roomCreated', data: this.roomDto(room) }); return;
       }
@@ -388,9 +460,15 @@ export class Server {
     if (!room) { this.playerError(p, 'no_room'); return; }
     const targets = Array.isArray(record.to) ? new Set(record.to.filter((id): id is string => typeof id === 'string')) : undefined;
     switch (message.method) {
-      case 'sendChatMsg': this.broadcast(room, { method: 'chatMsg', data: { text: d, from: p.playerId } }); break;
-      case 'sendToRoom': this.broadcast(room, { method: 'messageFromPlayer', data: { from: p.playerId, msg: d } }, p.playerId); break;
-      case 'sendTo': this.broadcast(room, { method: 'messageFromPlayer', data: { from: p.playerId, msg: record.msg } }, undefined, targets); break;
+      case 'sendChatMsg': case 'sendToRoom': case 'sendTo': {
+        const outgoing = message.method === 'sendChatMsg'
+          ? { method: 'chatMsg', data: { text: d, from: p.playerId } }
+          : { method: 'messageFromPlayer', data: { from: p.playerId, msg: message.method === 'sendTo' ? record.msg : d } };
+        const json = this.prepareRelay(p, outgoing);
+        if (json !== null) this.broadcastJson(room, json, message.method === 'sendToRoom' ? p.playerId : undefined,
+          message.method === 'sendTo' ? targets : undefined);
+        break;
+      }
       case 'requestGameState': {
         const owner = this.players.get(room.ownerId);
         if (owner && this.activeRoom(owner) === room) this.send(owner, { method: 'gameStateRequested', data: p.toNetObject() }); break;
@@ -399,10 +477,18 @@ export class Server {
         if (room.ownerId !== p.playerId) { this.playerError(p, 'not_room_owner'); return; }
         if (message.method === 'startGame') {
           if (room.gameStarted) { this.playerError(p, 'already_started'); return; }
-          room.gameStarted = true; this.broadcast(room, { method: 'gameStarted', data: d }); this.lobby({ method: 'roomBlock', data: room.roomId });
+          const json = this.prepareRelay(p, { method: 'gameStarted', data: d });
+          if (json === null) return;
+          room.gameStarted = true; this.broadcastJson(room, json); this.lobby({ method: 'roomBlock', data: room.roomId });
         } else if (message.method === 'shareGameState') {
-          this.broadcast(room, { method: 'newGameState', data: record.gamestate }, targets ? undefined : p.playerId, targets);
-        } else { room.roomMeta = d; this.broadcast(room, { method: 'onSetRoomMeta', data: d }); }
+          const json = this.prepareRelay(p, { method: 'newGameState', data: record.gamestate });
+          if (json !== null) this.broadcastJson(room, json, targets ? undefined : p.playerId, targets);
+        } else {
+          if (!this.roomFits(room, d)) { this.playerError(p, 'payload_too_large'); return; }
+          const json = this.prepareRelay(p, { method: 'onSetRoomMeta', data: d });
+          if (json === null) return;
+          room.roomMeta = d; this.broadcastJson(room, json);
+        }
         break;
       }
     }

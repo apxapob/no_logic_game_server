@@ -668,7 +668,7 @@ test('per-IP admission includes raw TCP before an HTTP or WebSocket upgrade', as
   await accepted.barrier();
 });
 
-test('one outbound message over maxBufferedBytes closes its recipient without a flood', async t => {
+test('one relay over maxBufferedBytes rejects its sender without disconnecting healthy peers', async t => {
   for (const binary of [false, true]) {
     const { server, url } = await startServer(t, { maxBufferedBytes: 512, maxPayloadBytes: 4096 });
     const sender = await connect(t, url);
@@ -678,11 +678,18 @@ test('one outbound message over maxBufferedBytes closes its recipient without a 
     await sender.wait('playerEnter');
     if (binary) sender.ws.send(Buffer.alloc(1024, 1));
     else sender.send('sendTo', { to: [recipient.account.playerId], msg: 'x'.repeat(1024) });
-    await waitClosed(recipient, 600);
+    assert.equal((await sender.wait('error')).data.code, 'payload_too_large');
+    // The all-player aggregate itself may exceed this deliberately tiny budget.
+    for (const client of [sender, recipient]) {
+      client.send('getPlayers', [client.account.playerId]);
+      assert.equal((await client.wait('onGetPlayers')).data[0].playerId, client.account.playerId);
+      assert.equal(client.closed, false);
+    }
     recipient.assertNo(binary ? 'binary' : 'messageFromPlayer');
-    assert.equal((await sender.wait('playerDisconnected')).data, recipient.account.playerId);
-    assert.ok(Array.isArray(await sender.barrier()));
-    await eventually(() => server.stats().online === 1, 'outbound-limit recipient cleanup');
+    sender.assertNo('playerDisconnected');
+    assert.equal(server.stats().online, 2);
+    sender.send('sendToRoom', 'still healthy');
+    assert.equal((await recipient.wait('messageFromPlayer')).data.msg, 'still healthy');
   }
 });
 

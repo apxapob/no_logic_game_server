@@ -15,7 +15,7 @@ function demo() {
   const html = fs.readFileSync(path.join(__dirname,'../demo.html'),'utf8');
   vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],sandbox);
   timers.shift()(); WS.instance.onopen();
-  return {sent,timers,intervals,raf,listeners,canvas,get ws() { return WS.instance; },eval:code=>vm.runInContext(code,sandbox),event:(method,data)=>WS.instance.onmessage({data:JSON.stringify({method,data})})};
+  return {sent,timers,intervals,raf,listeners,canvas,get ws() { return WS.instance; },eval:code=>vm.runInContext(code,sandbox),event:(method,data,extra={})=>WS.instance.onmessage({data:JSON.stringify({method,data,...extra})})};
 }
 test('first frame authentication, IDs, room marker and ownership',()=>{
   const d=demo(); assert.deepEqual(d.sent[0],{method:'authenticate',data:{}}); assert.equal(d.ws.url,'ws://127.0.0.1:8080/');
@@ -86,6 +86,23 @@ test('simultaneous empty lists converge on the smallest solo room without stale 
   b.event('onRoomEnter',roomDTO('a','A',{players:['A','B']}));
   b.event('gameStarted',b.eval('JSON.parse(JSON.stringify(state))'));
   b.intervals[1].f(); assert.equal(b.sent.length,n);
+});
+test('matchmaking follows paced pages before choosing a room',()=>{
+  const d=demo(); authenticate(d,'me');
+  const before=d.sent.length;
+  d.event('onGetRooms',[roomDTO('a','other',{gameData:{unrelated:'x'.repeat(1000)}})],{nextCursor:'a'});
+  assert.equal(d.sent.length,before); assert.equal(d.eval('roomsRequested'),true);
+  d.intervals[1].f(); assert.equal(d.sent.length,before);
+  d.timers.shift()(); assert.deepEqual(d.sent.at(-1),{method:'getRooms',data:{after:'a'}});
+  d.event('onGetRooms',[roomDTO('b','other')],{nextCursor:null});
+  assert.deepEqual(d.sent.at(-1),{method:'enterRoom',data:{roomId:'b',password:null}});
+  assert.equal(d.eval('roomPages.length'),0);
+});
+test('a stale page continuation cannot run after socket close',()=>{
+  const d=demo(); authenticate(d,'me');
+  d.event('onGetRooms',[],{nextCursor:'a'});
+  const before=d.sent.length; d.ws.onclose(); d.timers.shift()();
+  assert.equal(d.sent.length,before); assert.equal(d.eval('roomsRequested'),false);
 });
 test('solo matchmaking excludes protected, full, started and unrelated rooms',()=>{
   const d=demo(); authenticate(d,'me'); const own=roomDTO('z','me'); d.event('onRoomEnter',own);

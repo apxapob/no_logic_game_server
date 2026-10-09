@@ -18,6 +18,7 @@ if (channel) channel.onmessage = ({data}) => {
 if (channel && credentials) channel.postMessage({type:'claim', playerId:credentials.playerId, tabId});
 let socket, connected = false, room = null, ownerId = null, started = false, startPending = false, attempts = 0, authFailed = false;
 let matchmakingPending = false, roomsRequested = false;
+let roomPages = [], roomScan = 0;
 let input = .5, dirty = true, lastFrame = null, accumulator = 0;
 let state = {p1pos:.5,p2pos:.5,p1score:0,p2score:0,ballX:.5,ballY:.5,ballSpeedX:.3,ballSpeedY:.24};
 const owner = () => Boolean(credentials && ownerId === credentials.playerId);
@@ -30,12 +31,12 @@ function connect() {
   socket.onopen = () => { if (current === socket) send('authenticate', credentials ? {playerId:credentials.playerId,password:credentials.password} : {}); };
   socket.onmessage = event => {
     if (current !== socket || typeof event.data !== 'string') return;
-    try { const message = JSON.parse(event.data); if (Object.hasOwn(handlers, message.method)) handlers[message.method](message.data); } catch { status.textContent = 'Invalid server message'; }
+    try { const message = JSON.parse(event.data); if (Object.hasOwn(handlers, message.method)) handlers[message.method](message.data, message); } catch { status.textContent = 'Invalid server message'; }
   };
   socket.onerror = () => { status.textContent = 'Connection unavailable'; };
   socket.onclose = () => {
     if (current !== socket) return;
-    connected = false; room = null; ownerId = null; started = false; startPending = false; matchmakingPending = false; roomsRequested = false;
+    connected = false; room = null; ownerId = null; started = false; startPending = false; matchmakingPending = false; roomsRequested = false; roomPages = []; roomScan++;
     if (authFailed) return;
     status.textContent = 'Disconnected; reconnecting…';
     setTimeout(connect, Math.min(10000, 500 * 2 ** Math.min(attempts++, 5)) + Math.random()*250);
@@ -49,7 +50,7 @@ function soloWaiting() {
 }
 function requestRooms() {
   if (!connected || matchmakingPending || roomsRequested || (room && !soloWaiting())) return;
-  roomsRequested = true;
+  roomsRequested = true; roomPages = []; roomScan++;
   send('getRooms');
 }
 function findRoom(rooms) {
@@ -75,8 +76,17 @@ function findRoom(rooms) {
 const handlers = {
   accountCreated(data) { credentials = {playerId:data.playerId,password:data.password}; try { sessionStorage.setItem(KEY, JSON.stringify(credentials)); } catch {} },
   onConnected() { connected = true; attempts = 0; status.textContent = 'Waiting for opponent'; const current = socket; setTimeout(() => { if (current === socket) requestRooms(); }, 100); },
-  onGetRooms: findRoom,
-  onRoomEnter(data) { matchmakingPending = false; room = data; ownerId = data.ownerId; started = data.gameStarted; dirty = true; if (started && !owner()) send('requestGameState'); maybeStart(); },
+  onGetRooms(data, envelope) {
+    if (!roomsRequested) return;
+    // Keep only demo candidates; unrelated large metadata need not accumulate in the UI.
+    roomPages.push(...data.filter(r => r.gameData && r.gameData.demo === TAG));
+    if (typeof envelope.nextCursor === 'string') {
+      const scan = roomScan, current = socket;
+      // Pace continuation requests instead of bursting through the incoming rate quota.
+      setTimeout(() => { if (connected && current === socket && scan === roomScan && roomsRequested) send('getRooms', {after:envelope.nextCursor}); }, 25);
+    } else { const complete = roomPages; roomPages = []; findRoom(complete); }
+  },
+  onRoomEnter(data) { matchmakingPending = false; roomsRequested = false; roomPages = []; roomScan++; room = data; ownerId = data.ownerId; started = data.gameStarted; dirty = true; if (started && !owner()) send('requestGameState'); maybeStart(); },
   roomCreated() {}, roomDeleted() {}, roomBlock() {},
   playerEnter(data) { if (room && !room.players.includes(data.playerId)) room.players.push(data.playerId); maybeStart(); },
   playerLeft(id) { removePlayer(id); }, playerDisconnected(id) { removePlayer(id); },
@@ -87,7 +97,7 @@ const handlers = {
   messageFromPlayer(data) { if (owner() && room && room.players.includes(data.from) && data.from !== ownerId && data.msg && Number.isFinite(data.msg.y)) state.p2pos = clamp(data.msg.y); },
   Ping(data) { if (Number.isFinite(data)) send('Pong', data); },
   RoomRTT(data) { if (data && credentials && Number.isFinite(data[credentials.playerId])) status.textContent = 'RTT ' + Math.round(data[credentials.playerId]) + ' ms'; },
-  error(data) { status.textContent = 'Server error: ' + (data && data.code || 'unknown'); startPending = false; matchmakingPending = false; roomsRequested = false; /* Retry on the bounded matchmaking tick, not on every error. */ },
+  error(data) { status.textContent = 'Server error: ' + (data && data.code || 'unknown'); startPending = false; matchmakingPending = false; roomsRequested = false; roomPages = []; roomScan++; /* Retry on the bounded matchmaking tick, not on every error. */ },
   wrongPassword() { authFailed = true; credentials = null; try { sessionStorage.removeItem(KEY); } catch {} status.textContent = 'Credentials expired or rejected. '; const button = document.createElement('button'); button.textContent = 'New guest'; button.onclick = () => location.reload(); status.appendChild(button); }
 };
 function removePlayer(id) { if (room) room.players = room.players.filter(p => p !== id); }

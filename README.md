@@ -47,7 +47,7 @@ Text frames are JSON `{method, data}`. IDs are UUIDs; room DTOs use `roomId`, pl
 
 | Method | data |
 |---|---|
-| getRooms | omitted |
+| getRooms | omitted/null or `{after?:roomId}` for byte-bounded pages |
 | createRoom | `{name,maxPlayers,password?:string\|null,gameData?:JSON}` |
 | enterRoom | `{roomId,password?:string\|null}` |
 | leaveRoom | omitted; revokes reconnect eligibility |
@@ -71,7 +71,7 @@ Binary frames relay raw bytes to active room peers. **No server-authenticated se
 | accountCreated | `{name,playerId,password}`; secret, never log |
 | onConnected | `{online}` |
 | wrongPassword | authentication rejected; socket closes |
-| onGetRooms | room DTO array |
+| onGetRooms | room DTO array; envelope also has `nextCursor:roomId\|null` |
 | roomCreated, onRoomEnter | room DTO |
 | roomDeleted, roomBlock | roomId |
 | onGetPlayers | public player DTO array |
@@ -91,6 +91,33 @@ Binary frames relay raw bytes to active room peers. **No server-authenticated se
 Room DTO: `{roomId,ownerId,name,players,maxPlayers,hasPassword,gameData,gameStarted,rtt,metaData}`. `players` are active member IDs, never passwords. Public player DTO: `{playerId,name,rtt,roomEntryTimestamp}`; never account secrets or `roomId`. Unknown events should be ignored safely. Invalid/unknown client methods return `invalid_message`. Lifecycle codes: `in_other_room`, `already_in_room`, `no_room`, `wrong_password`, `full_room`, `not_room_owner`, `already_started`, `game_started_without_you`; quotas use `limit_exceeded`. Rate/size abuse may close the socket.
 
 RTT only accepts an outstanding issued timestamp once. Activity/heartbeat maintenance enforces idle timeout; an arbitrary client timestamp does not establish RTT.
+
+### Serialized message budgets and pagination
+
+`maxPayloadBytes` limits both raw incoming data and normalized JSON (the complete envelope,
+maximum nesting depth 32). Outgoing text/binary messages must fit
+`min(maxPayloadBytes, maxBufferedBytes - 10)`; the 10-byte allowance covers data-frame headers.
+A small numeric literal such as `1e20` can grow when serialized, so raw byte size alone
+is not sufficient. Oversized application input/relay returns `payload_too_large` to its
+sender **before** state changes or fan-out. Room creation and metadata updates reserve
+enough space for the combined DTO with its full `maxPlayers` membership and a page envelope.
+A rejected metadata update preserves the previous value. These limits apply to stored
+`gameData` and metadata together, not separately.
+
+`getRooms` returns one page, ordered by roomId. `data` remains an array. When the response
+envelope has a non-null `nextCursor`, send `getRooms` with `{after: nextCursor}` until
+`nextCursor` is null. Deleted cursors still continue lexicographically; pages are not a
+snapshot, so concurrent additions before the cursor may require a fresh scan. Pace requests
+against the shared incoming quota. The demo automatically collects pages at a bounded rate.
+An oversized `getPlayers` aggregate returns `response_too_large` without disconnecting the
+reader; retry with smaller explicit ID subsets. No partial player list is silently returned.
+
+Queued outgoing bytes are still bounded: genuine queue saturation terminates the slow
+connection. RFC WebSocket control Ping/Pong share the incoming rate quota with data frames,
+including before authentication. Automatic Pong is disabled; manual echo checks queued
+bytes plus the two-byte control-frame header. Control Pong does not update application RTT.
+Flood/queue violations terminate the offending connection without adding a close frame
+behind the saturated queue.
 
 ## Runtime and configuration
 

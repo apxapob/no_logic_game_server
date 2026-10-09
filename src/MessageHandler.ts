@@ -16,12 +16,14 @@ export function validateMessage(value: unknown, maxRoomPlayers: number, maxAccou
   if (!isRecord(value) || !Object.hasOwn(value, 'method') || typeof value.method !== 'string') return false;
   const d = value.data;
   const ids = (v: unknown): boolean => Array.isArray(v) && v.length <= maxAccounts && v.every(isUuid) && new Set(v).size === v.length;
-  if (d !== undefined && !boundedJson(d)) return false;
+  // Normalize only envelopes whose entire tree is bounded, including extension fields.
+  if (!boundedJson(value)) return false;
   switch (value.method) {
     case 'authenticate': return isRecord(d) && (d.name === undefined || name(d.name)) &&
       (d.playerId === undefined || isUuid(d.playerId)) && (d.password === undefined || (typeof d.password === 'string' && password(d.password)));
     case 'Pong': return typeof d === 'number' && Number.isFinite(d);
-    case 'getRooms': case 'leaveRoom': case 'requestGameState': return d === undefined || d === null;
+    case 'getRooms': return d === undefined || d === null || (isRecord(d) && (d.after === undefined || isUuid(d.after)));
+    case 'leaveRoom': case 'requestGameState': return d === undefined || d === null;
     case 'getPlayers': return d === undefined || d === null || ids(d);
     case 'changeName': return name(d);
     case 'sendChatMsg': return typeof d === 'string' && d.length <= 2048;

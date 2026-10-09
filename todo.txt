@@ -1,10 +1,29 @@
 Техдолг
 
-Все 17 пунктов исходного аудита реализованы и проверены в ветке fix/project-hardening.
+17 пунктов исходного аудита реализованы. Два дополнительных P1 независимого ревью
+исправлены и проверены ниже; повторное независимое одобрение не подразумевается.
 [x] означает реализацию и проверку, а не merge или независимое одобрение.
 Исходные описания сохранены в docs/audit-baseline.txt.
 Проверки и ограничения: docs/hardening-verification.md.
-PR: https://github.com/apxapob/no_logic_game_server/pull/1 (открыт; merge и независимое ревью не выполнялись).
+PR: https://github.com/apxapob/no_logic_game_server/pull/1 (открыт; merge не выполнялся).
+Ревью HEAD 7abf639: https://github.com/apxapob/no_logic_game_server/pull/1#pullrequestreview-5474971833
+
+[x] [P1/R1] Бюджет сериализованных ответов и агрегированных списков — src/Server.ts.
+Проверяются нормализованный JSON и полный outbound envelope до изменения/fan-out.
+Room DTO резервирует maxPlayers и общий объём gameData/metadata; ошибочные изменения
+атомарно отклоняются с payload_too_large без отключения исправных получателей.
+getRooms выдаёт ограниченные страницы nextCursor/after; oversized getPlayers отвечает
+response_too_large, явные подмножества доступны. Demo поддерживает paced pagination.
+Проверено: исходное раздувание 12000*1e20, 3 крупных room DTO, атомарность metadata,
+поля envelope, pagination/cursors, binary и браузерный reconnect через 3 страницы.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1#discussion_r4234221408
+
+[x] [P1/R2] Control Ping обходит rate limit и outbound budget — src/Server.ts.
+autoPong выключен. Data/Ping/Pong делят rate counter, в том числе до auth; ручной Pong
+проверяет bufferedAmount + payload + frame header. Нарушитель terminate без накопления
+close frame. Проверены mixed/pre-auth/Pong flood, paused reader 1000 Ping и отдельный
+byte-budget тест: 10000 Ping при quota20000 и maxBufferedBytes512; 5 повторов проходят.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1#discussion_r4234221414
 
 [x] [P1] Изоляция комнат и выход из игры.
 Активное членство отделено от reconnect reservations; explicit leave отзывает допуск.
@@ -113,8 +132,11 @@ Side-effect-free Server start/stop, injected config/logger, без singleton/imp
 PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 Ограничения проверки
-- Независимое ревью не запускалось: Alex запускает его отдельно.
+- Независимое ревью HEAD 7abf639 выполнено в отдельной сессии; оба P1 приняты и исправлены.
+  Повторное независимое ревью автоматически не запускалось.
 - Внешний Caddy/TLS deployment, production capacity и разрушающие CVE PoC не проверялись.
 - Изменение auth требует обновления старых клиентов; инструкция миграции в README.md.
-- Удалённый CI для реализации f96fcae: Ubuntu 50/50, Windows 49 pass / 1 platform skip;
-  оба npm ci/check/audit успешны. Актуальные проверки последующих commits видны в PR.
+- После исправлений: локально Node24/26 — 63 теста, 62 pass / 1 Windows platform skip,
+  npm ci/check/audit успешны, уязвимостей 0. 11 regression tests повторены 5 раз.
+  Актуальные удалённые проверки для нового commit видны в PR. Подробности:
+  docs/review-followup.md (предыдущие результаты сохранены в hardening-verification.md).

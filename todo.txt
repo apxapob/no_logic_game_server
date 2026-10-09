@@ -4,74 +4,74 @@
 [x] означает реализацию и проверку, а не merge или независимое одобрение.
 Исходные описания сохранены в docs/audit-baseline.txt.
 Проверки и ограничения: docs/hardening-verification.md.
-PR: ожидает публикации после фиксации проверенного состояния.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1 (открыт; merge и независимое ревью не выполнялись).
 
 [x] [P1] Изоляция комнат и выход из игры.
 Активное членство отделено от reconnect reservations; explicit leave отзывает допуск.
 JSON, адресная отправка, binary и передача владельца ограничены активной комнатой.
 Файлы: src/Server.ts, src/Room.ts. Проверено network regression tests.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P1] Повторный вход и актуальное соединение.
 Один сокет на аккаунт; старые сообщения, close и delayed callbacks fenced.
 Новая сессия получает snapshot активной комнаты без изменения timestamp.
 Файлы: src/Server.ts. Проверено network tests и браузерным reconnect/handoff.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P1] Пустые комнаты после неудачного createRoom.
 Проверки членства и квот выполняются до выделения комнаты; пустые комнаты удаляются.
 Файлы: src/Server.ts. Проверены отсутствие ghost rooms и повторное использование квот.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P1] Валидация и обработка некорректных сообщений.
 Unknown-based validation, собственный allowlist методов, ограничения типов/длины/depth.
 Некорректный клиент получает invalid_message, последующие запросы продолжают работать;
 глобальное проглатывание uncaughtException удалено.
 Файлы: src/MessageHandler.ts, src/Server.ts, src/index.ts. Негативные тесты проходят.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P1] Уязвимая runtime-зависимость ws.
 Обновлена до 8.22.0 с новым lockfile; npm audit --omit=dev: 0 уязвимостей.
 Файлы: package.json, package-lock.json. Протокольные регрессии проходят.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P1] Ограничения ресурсов и хранение аккаунтов.
 Добавлены TCP/WS/per-IP/attempt/account/room/message/payload/delayed-queue лимиты,
 backpressure, auth/idle timeout, TTL offline accounts и ограниченные служебные карты.
 Файлы: src/Server.ts, src/config.ts. Проверены квоты, TTL, большие кадры и очереди.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P1] Транспорт, credentials и Origin.
 Crypto IDs/пароли, authenticate первым сообщением вместо URL, отсутствие secret payload
 logs, loopback по умолчанию, проверка Origin, инструкция и пример WSS через Caddy.
 Файлы: src/Player.ts, src/Server.ts, src/config.ts, README.md, docs/deployment.md.
 Auth/origin/log-redaction тесты проходят; внешний TLS deployment не выполнялся.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P2] Корректная остановка.
 Асинхронный идемпотентный stop с deadline закрывает WebSocket, raw TCP/HTTP и таймеры;
 CLI обрабатывает SIGINT/SIGTERM, singleton больше нет.
 Файлы: src/Server.ts, src/index.ts. Shutdown/startup-race/raw TCP тесты проходят;
-POSIX SIGTERM проверяется в Linux CI, локально на Windows честный skip.
-PR: ожидает публикации.
+POSIX SIGTERM прошёл в Linux CI (50/50); на Windows 49 pass и честный platform skip.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P2] Неуспешный startup.
 Готовность логируется после listening; конфигурация/bind failures завершаются nonzero;
 добавлен healthz. Файлы: src/Server.ts, src/index.ts. CLI/bind/health тесты проходят.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P2] Демо и совместимость API.
 Исправлены IDs, ownership, auth, heartbeat, reconnect, ошибки и неизвестные события;
 добавлены bounded matchmaking и защита от клонирования account между вкладками.
 Файлы: demo.html, README.md, test/demo.test.cjs. VM и реальные браузерные тесты проходят.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P2] Production build, линтер, тесты и CI.
 Строгий современный TS, compiled production start без dev deps, ESLint flat config,
 50 тестов, Linux/Windows Node24 CI. Удалены старые dist artifacts и TSLint.
 Файлы: package.json, tsconfig.json, eslint.config.mjs, .github/workflows/ci.yml, scripts/, test/.
 Чистые npm ci/check и production-only smoke проходят на проверенных runtime.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P2] Обновить все зависимости.
 Обновлены ws, ESLint/TypeScript tooling, @types, транзитивные зависимости; ts-node заменён
@@ -80,29 +80,29 @@ TypeScript ~6.0.3 оставлен из-за peer limit typescript-eslint <6.1; 
 соответствует поддерживаемой Node24. Это обоснованные caps, не забытые обновления.
 Файлы: package.json, package-lock.json, .github/workflows/ci.yml. Проверены npm outdated,
 чистая установка, сборка/линтер/тесты на Node24.21.0 и Node26.4.0.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P2] roomEntryTimestamp в событиях.
 Согласованное состояние устанавливается до playerEnter/onRoomEnter; replacement не
 сбрасывает время членства. Файлы: src/Server.ts. Timestamp/snapshot tests проходят.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P3] Сортировка getPlayers.
 Сортировка по timestamp, null в конце, playerId tie-breaker; subset lookup без полного
 обхода аккаунтов. Файлы: src/Server.ts. Смешанные списки/subset/TTL проверены.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P3] Недоверенный RTT.
 Принимается только один ответ на outstanding server timestamp; чужие/replayed значения
 RTT не меняют. Файлы: src/Server.ts. Forgery/replay и heartbeat tests проходят.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P3] Обходы, сериализация и частота обновлений.
 Online index, прямой lookup, одна сериализация на broadcast, один maintenance timer.
 В demo физика 120 Hz с фиксированным шагом и отдельная сеть 20 Hz с coalescing ввода.
 Файлы: src/Server.ts, demo.html, scripts/benchmark.cjs.
 Проверены timing/браузер и bounded benchmark 8/32 клиентов; capacity ceiling не заявляется.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P3] Архитектура и контракт.
 Side-effect-free Server start/stop, injected config/logger, без singleton/import cycle,
@@ -110,11 +110,11 @@ Side-effect-free Server start/stop, injected config/logger, без singleton/imp
 Документированы memory-only состояние, TTL, last-peer disposal, raw binary trust и
 отсутствие античита; это ограничения модели, а не обещанные дополнительные функции.
 Файлы: src/, tsconfig.json, README.md, docs/deployment.md. Изолированные instances проверены.
-PR: ожидает публикации.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 Ограничения проверки
 - Независимое ревью не запускалось: Alex запускает его отдельно.
 - Внешний Caddy/TLS deployment, production capacity и разрушающие CVE PoC не проверялись.
 - Изменение auth требует обновления старых клиентов; инструкция миграции в README.md.
-- Актуальный удалённый CI verdict будет виден в PR; локальный Windows SIGTERM skip
-  не выдаётся за проверенный POSIX shutdown.
+- Удалённый CI для реализации f96fcae: Ubuntu 50/50, Windows 49 pass / 1 platform skip;
+  оба npm ci/check/audit успешны. Актуальные проверки последующих commits видны в PR.

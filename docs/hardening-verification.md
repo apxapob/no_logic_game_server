@@ -24,8 +24,11 @@ with Node 24.21.0 obtained through npm's temporary executable cache.
 | Demo static server | GET / and /demo.html: 200; private repo paths: 404; POST: 405; HEAD: no body |
 
 The skipped test exercises the POSIX SIGTERM handler: Windows child.kill does not
-provide the equivalent signal behavior. Linux/Windows Node 24 CI is configured;
-remote CI status is reported on the PR rather than inferred from local checks.
+provide the equivalent signal behavior. Remote Node 24 CI was also verified for
+implementation commit `f96fcae`: Ubuntu **50/50 pass**, including SIGTERM; Windows
+**49 pass / 1 platform skip**. Both clean install/check/audit jobs succeeded in the
+[PR CI run](https://github.com/apxapob/no_logic_game_server/actions/runs/37984887539).
+Subsequent commit checks remain visible on [PR #1](https://github.com/apxapob/no_logic_game_server/pull/1).
 
 Regressions cover guest/reconnect authentication, URL credential and Origin rejection,
 session replacement and active-room restoration, permissions, explicit leave versus

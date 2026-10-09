@@ -1,11 +1,5 @@
 Техдолг
 
-[ ] [P2] Переносимость теста byte-budget — test/review-regressions.test.cjs.
-CI Linux на 0f8f272 не достигает backpressure от фиксированного flood; тест ошибочно
-зависит от TCP-буферов ОС. Детерминированно задержать реальную очередь записи без
-подмены bufferedAmount или ослабления assertions; закрыть после Windows/Linux CI.
-PR: https://github.com/apxapob/no_logic_game_server/pull/1
-
 17 пунктов исходного аудита реализованы. Два дополнительных P1 независимого ревью
 исправлены и проверены ниже; повторное независимое одобрение не подразумевается.
 [x] означает реализацию и проверку, а не merge или независимое одобрение.
@@ -30,6 +24,12 @@ autoPong выключен. Data/Ping/Pong делят rate counter, в том ч�
 close frame. Проверены mixed/pre-auth/Pong flood, paused reader 1000 Ping и отдельный
 byte-budget тест: 10000 Ping при quota20000 и maxBufferedBytes512; 5 повторов проходят.
 PR: https://github.com/apxapob/no_logic_game_server/pull/1#discussion_r4234221414
+
+[x] [P2] Переносимость теста byte-budget — test/review-regressions.test.cjs.
+Убрана ошибочная зависимость фиксированного flood от размеров TCP-буферов ОС.
+Cork реального writable stream детерминированно удерживает очередь, без подмены
+bufferedAmount и ослабления лимитов/assertions. CI c93fd49: Ubuntu63/63, Windows62/1skip.
+PR: https://github.com/apxapob/no_logic_game_server/pull/1
 
 [x] [P1] Изоляция комнат и выход из игры.
 Активное членство отделено от reconnect reservations; explicit leave отзывает допуск.
@@ -144,5 +144,6 @@ PR: https://github.com/apxapob/no_logic_game_server/pull/1
 - Изменение auth требует обновления старых клиентов; инструкция миграции в README.md.
 - После исправлений: локально Node24/26 — 63 теста, 62 pass / 1 Windows platform skip,
   npm ci/check/audit успешны, уязвимостей 0. 11 regression tests повторены 5 раз.
-  Актуальные удалённые проверки для нового commit видны в PR. Подробности:
+  CI c93fd49: Ubuntu63/63, Windows62 pass/1 skip, оба push и PR workflows успешны.
+  Актуальные проверки последующих commits видны в PR. Подробности:
   docs/review-followup.md (предыдущие результаты сохранены в hardening-verification.md).

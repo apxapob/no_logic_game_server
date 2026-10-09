@@ -69,8 +69,12 @@ The lead first ran two new regressions against the unchanged baseline: both fail
   Both players returned to the same match; browser console had no warnings/errors.
 - Lead checked the diff and test logs; tester did not alter source or expected results.
 
-Remote Linux/Windows results for the new commit are reported in the PR threads after
-CI completes. The original verification report remains in
+Remote [PR CI for c93fd49](https://github.com/apxapob/no_logic_game_server/actions/runs/37989084433)
+and its push workflow both succeeded: **Ubuntu 63/63 pass**, **Windows 62 pass / one
+POSIX SIGTERM skip**, clean install/check/audit passed, zero vulnerabilities. The lead
+checked actual job logs, including the portable saturated-control-queue test. Results
+for later documentation-only commits are visible in the PR checks and replies.
+The original verification report remains in
 [hardening-verification.md](hardening-verification.md); its older 50-test counts refer
 to the pre-review implementation, not this follow-up. External TLS deployment and
 production capacity remain outside this local verification.

@@ -1,26 +1,23 @@
-import { Server } from "./Server"
-
-console.clear()
-
-const DevMode = process.argv.includes("dev")
-const SendDelay = Number(process.argv.find(arg => arg.startsWith('delay='))?.substring(6) ?? 0)
-
-export const logMessage = (message?: any, ...optionalParams: any[]) => {
-  console.log(
-    `[${new Date().toLocaleTimeString()}]`, 
-    message, ...optionalParams
-  )
+import { Server } from './Server';
+import { configFromEnv } from './config';
+export { Server } from './Server';
+export { configFromEnv } from './config';
+export async function main(): Promise<void> {
+  const server = new Server({ ...configFromEnv(), logger: text => console.log(text) });
+  const shutdown = (): void => {
+    void server.stop().catch(() => { console.error('Server shutdown failed'); process.exitCode = 1; });
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
+  try { await server.start(); }
+  catch {
+    process.exitCode = 1;
+    console.error('Server startup failed');
+    await server.stop();
+    process.removeListener('SIGINT', shutdown);
+    process.removeListener('SIGTERM', shutdown);
+  }
 }
-
-new Server(DevMode, SendDelay)
-
-const exitHandler = (...args:any) => {
-  Server.instance?.stop(args)
+if (require.main === module) {
+  void main().catch(() => { console.error('Server configuration failed'); process.exitCode = 1; });
 }
-
-process.on('uncaughtException', (e) => logMessage("Uncaught Exception", e))
-
-process.on('exit', exitHandler)
-process.on('SIGINT', exitHandler)
-process.on('SIGUSR1', exitHandler)
-process.on('SIGUSR2', exitHandler)

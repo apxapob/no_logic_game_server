@@ -1,175 +1,120 @@
 Техдолг
 
-Аудит текущего состояния (исходная ревизия 8334c6b). Код и зависимости не исправлялись.
-P1 — исправить до публичного запуска; P2 — надёжность и сопровождение; P3 — улучшения.
-«Воспроизведено» означает локальные проверки на реальных WebSocket-соединениях;
-«По коду» — установленное свойство реализации, без нагрузочного/эксплуатационного теста.
-Отдельные изолированные проверки demo/сортировки в VM отмечены явно.
+Все 17 пунктов исходного аудита реализованы и проверены в ветке fix/project-hardening.
+[x] означает реализацию и проверку, а не merge или независимое одобрение.
+Исходные описания сохранены в docs/audit-baseline.txt.
+Проверки и ограничения: docs/hardening-verification.md.
+PR: ожидает публикации после фиксации проверенного состояния.
 
-[P1] Изоляция комнат и выход из игры — src/Room.ts, src/MessageHandler.ts.
-Воспроизведено: после startGame -> leaveRoom бывший участник продолжает получать
-JSON и binary старой комнаты. playerDisconnected обнуляет Player.roomId, но оставляет
-playerId в Room.playerIds, а рассылки не проверяют текущую комнату получателя.
-reconnectPlayer также разрешает вход из другой комнаты: один игрок остаётся в двух
-списках, получая чужие события и нарушая выбор владельца/очистку комнат.
-Действие: отделить право на reconnect от активного членства; проверять членство при
-рассылке, переходах и адресной отправке; определить отдельную семантику leave/disconnect.
-Критерий: регрессионные тесты выхода, смены комнаты, reconnect и передачи владельца.
+[x] [P1] Изоляция комнат и выход из игры.
+Активное членство отделено от reconnect reservations; explicit leave отзывает допуск.
+JSON, адресная отправка, binary и передача владельца ограничены активной комнатой.
+Файлы: src/Server.ts, src/Room.ts. Проверено network regression tests.
+PR: ожидает публикации.
 
-[P1] Повторный вход ломает актуальное соединение — src/Server.ts: registerPlayer/close.
-Воспроизведено: вход с теми же credentials оставляет старый сокет открытым; его close
-обнуляет Player.ws нового подключения и удаляет игрока из комнаты. Новый клиент остаётся
-OPEN, но getRooms не получает ответа. Старый сокет также продолжает выполнять команды.
-Действие: единая политика замены/отклонения сессии, привязка callbacks к конкретному ws
-или generation; старый close не должен менять состояние новой сессии.
+[x] [P1] Повторный вход и актуальное соединение.
+Один сокет на аккаунт; старые сообщения, close и delayed callbacks fenced.
+Новая сессия получает snapshot активной комнаты без изменения timestamp.
+Файлы: src/Server.ts. Проверено network tests и браузерным reconnect/handoff.
+PR: ожидает публикации.
 
-[P1] createRoom оставляет пустые комнаты без автоочистки — src/MessageHandler.ts: createRoom.
-Воспроизведено: игрок в комнате отправляет ещё 5 createRoom; получает 5 in_other_room,
-но все 5 комнат уже добавлены в rooms, пусты и имеют активные RTTintervalId.
-Действие: проверять возможность создания заранее, выполнять создание/вход атомарно,
-очищать ресурсы при отказе; добавить квоты и тест повторного createRoom.
+[x] [P1] Пустые комнаты после неудачного createRoom.
+Проверки членства и квот выполняются до выделения комнаты; пустые комнаты удаляются.
+Файлы: src/Server.ts. Проверены отсутствие ghost rooms и повторное использование квот.
+PR: ожидает публикации.
 
-[P1] Некорректные сообщения выходят в uncaughtException — src/Server.ts,
-src/MessageHandler.ts, src/index.ts.
-Воспроизведены '{', 'null', enterRoom без data и sendTo с to:string: исключения выходят
-из ws message listener. Процесс не падает благодаря глобальному обработчику; здоровый
-клиент обслуживается, но испорченное соединение остаётся OPEN без дальнейших ответов
-в коротком окне проверки. Утверждать полный crash или вечное зависание нельзя.
-По коду нет runtime-схем, ограничений полей, allowlist собственных методов обработчика.
-Действие: валидировать envelope и data каждого метода, перехватывать ошибки на границе
-сообщения, возвращать protocol error/закрывать конкретный сокет. Не продолжать обычную
-работу после неизвестной фатальной uncaughtException. Добавить негативные тесты.
+[x] [P1] Валидация и обработка некорректных сообщений.
+Unknown-based validation, собственный allowlist методов, ограничения типов/длины/depth.
+Некорректный клиент получает invalid_message, последующие запросы продолжают работать;
+глобальное проглатывание uncaughtException удалено.
+Файлы: src/MessageHandler.ts, src/Server.ts, src/index.ts. Негативные тесты проходят.
+PR: ожидает публикации.
 
-[P1] Уязвимая runtime-зависимость ws — package.json, package-lock.json.
-Установлена и зафиксирована ws 8.18.0. npm audit --omit=dev сообщает 1 high-пакет:
-GHSA-96hv-2xvq-fx4p (memory exhaustion через фрагменты, исправление >=8.21.0),
-а также GHSA-58qx-3vcg-4xpx (uninitialized memory disclosure, >=8.20.1).
-На момент проверки npm outdated предлагает 8.22.0 внутри текущего ^8.18.0.
-Это результат базы advisory, эксплуатация конкретных CVE не выполнялась.
-Действие: обновить ws/lockfile, повторить audit и протокольные регрессии.
+[x] [P1] Уязвимая runtime-зависимость ws.
+Обновлена до 8.22.0 с новым lockfile; npm audit --omit=dev: 0 уязвимостей.
+Файлы: package.json, package-lock.json. Протокольные регрессии проходят.
+PR: ожидает публикации.
 
-[P1] Нет ресурсных ограничений — src/Server.ts, src/Player.ts, src/Room.ts.
-По коду: ws использует default maxPayload=100 MiB; нет прикладных лимитов частоты,
-подключений, комнат, длины имён/чата/metadata и очереди отправки bufferedAmount.
-Воспроизведено отдельно: отключённые аккаунты навсегда остаются в players и выдаются
-getPlayers. Это поддерживает reconnect, но без TTL/квот память и стоимость обходов
-растут от всей истории подключений. Тест истощения памяти намеренно не проводился.
-Действие: TTL/политика хранения аккаунтов и reconnect, квоты на игрока/IP/сервер,
-maxPayload под реальный протокол, backpressure и отключение медленных получателей.
+[x] [P1] Ограничения ресурсов и хранение аккаунтов.
+Добавлены TCP/WS/per-IP/attempt/account/room/message/payload/delayed-queue лимиты,
+backpressure, auth/idle timeout, TTL offline accounts и ограниченные служебные карты.
+Файлы: src/Server.ts, src/config.ts. Проверены квоты, TTL, большие кадры и очереди.
+PR: ожидает публикации.
 
-[P1 при прямой публикации] Защита транспорта и credentials — src/Server.ts,
-src/Player.ts, src/Utils.ts, README.md.
-По коду: listener не ограничен loopback; TLS не настроен; README предлагает ws://
-и пароль в query string (может попасть в access logs). Пароль генерируется Math.random,
-а dev-лог Player.send печатает accountCreated вместе с паролем.
-Действие: документировать/настроить WSS через reverse proxy, ограничить bind,
-использовать crypto.randomBytes/randomUUID, редактировать секреты в логах,
-передавать auth безопаснее query или использовать короткоживущий ticket; определить
-политику Origin для браузерных клиентов. Конфигурация внешнего proxy не исследована.
+[x] [P1] Транспорт, credentials и Origin.
+Crypto IDs/пароли, authenticate первым сообщением вместо URL, отсутствие secret payload
+logs, loopback по умолчанию, проверка Origin, инструкция и пример WSS через Caddy.
+Файлы: src/Player.ts, src/Server.ts, src/config.ts, README.md, docs/deployment.md.
+Auth/origin/log-redaction тесты проходят; внешний TLS deployment не выполнялся.
+PR: ожидает публикации.
 
-[P2] stop() не завершает сервер корректно — src/Server.ts, src/index.ts.
-Воспроизведено: сразу после stop Server.instance=null, но клиент остаётся OPEN;
-18 живых интервалов остаются 18. wsServer.close не закрывает активных клиентов.
-Также removeAllListeners убирает возможность наблюдать server close; последующие
-таймеры/room callbacks обращаются к уже обнулённому singleton. SIGTERM не обработан.
-Действие: идемпотентное асинхронное завершение, остановка всех таймеров, закрытие
-клиентов с deadline/terminate, ожидание закрытия listener; обнулять instance последним.
+[x] [P2] Корректная остановка.
+Асинхронный идемпотентный stop с deadline закрывает WebSocket, raw TCP/HTTP и таймеры;
+CLI обрабатывает SIGINT/SIGTERM, singleton больше нет.
+Файлы: src/Server.ts, src/index.ts. Shutdown/startup-race/raw TCP тесты проходят;
+POSIX SIGTERM проверяется в Linux CI, локально на Windows честный skip.
+PR: ожидает публикации.
 
-[P2] Неуспешный запуск выглядит успешным — src/Server.ts, src/index.ts.
-Воспроизведено в отдельном дочернем процессе с занятым локальным портом:
-выводится 'server started', затем EADDRINUSE; процесс завершается с exit code 0.
-Лог готовности пишется до listening, ошибка перехватывается глобально и не приводит
-к ненулевому коду. Это может обмануть диагностику/политику restart-on-failure.
-Действие: логировать готовность после listening, обрабатывать ошибку listener отдельно,
-завершать неуспешный startup с ненулевым кодом; добавить health/readiness проверку.
+[x] [P2] Неуспешный startup.
+Готовность логируется после listening; конфигурация/bind failures завершаются nonzero;
+добавлен healthz. Файлы: src/Server.ts, src/index.ts. CLI/bind/health тесты проходят.
+PR: ожидает публикации.
 
-[P2] demo.html не соответствует серверному API — demo.html, README.md.
-Подтверждено чтением кода и изолированным выполнением scripts в Node VM (не браузер E2E):
-accountCreated/playerEnter читают id вместо playerId; enterRoom отправляет
-id вместо roomId. roomCreated ошибочно трактуется как подтверждение собственного
-создания, хотя сервер отправляет событие только игрокам в lobby; создатель уже в комнате.
-Нет обработчиков Ping, RoomRTT, error и проверки наличия метода перед вызовом.
-Следствие: инструкция «открыть две вкладки — игра начнётся» не соответствует коду.
-Действие: синхронизировать DTO, ownership и heartbeat, безопасно игнорировать неизвестные
-события; добавить smoke-тест двух клиентов и длительного простоя.
+[x] [P2] Демо и совместимость API.
+Исправлены IDs, ownership, auth, heartbeat, reconnect, ошибки и неизвестные события;
+добавлены bounded matchmaking и защита от клонирования account между вкладками.
+Файлы: demo.html, README.md, test/demo.test.cjs. VM и реальные браузерные тесты проходят.
+PR: ожидает публикации.
 
-[P2] Нет воспроизводимого production build и проверок — package.json, tsconfig.json,
-tslint.json, dist/index.js.
-Есть только start/dev через ts-node из devDependencies; нет build/test/lint scripts,
-CI, закреплённого runtime (engines/.node-version) и автотестов. ESLint установлен,
-но запуск завершается ошибкой отсутствующей конфигурации; tslint.json относится
-к отсутствующему TSLint. main указывает на отсутствующий index.js.
-Закоммиченный dist/index.js — старый тестовый сервер, отправляющий 'ho!', не сборка src.
-Действие: build -> актуальный dist, production start через node, тесты и CI;
-выбрать политику хранения dist, убрать устаревший TSLint, настроить TypeScript ESLint.
+[x] [P2] Production build, линтер, тесты и CI.
+Строгий современный TS, compiled production start без dev deps, ESLint flat config,
+50 тестов, Linux/Windows Node24 CI. Удалены старые dist artifacts и TSLint.
+Файлы: package.json, tsconfig.json, eslint.config.mjs, .github/workflows/ci.yml, scripts/, test/.
+Чистые npm ci/check и production-only smoke проходят на проверенных runtime.
+PR: ожидает публикации.
 
-[P2] Обновить все зависимости проекта — package.json, package-lock.json.
-Обновление должно охватывать не только уязвимые пакеты, но и устаревшие инструменты:
-ws, TypeScript, ESLint, @types/node, @types/ws; проверить актуальность ts-node
-и обновить транзитивные зависимости. Приоритетное исправление ws описано выше.
-Полный npm audit: 7 уязвимых пакетов (5 high, 1 moderate, 1 low), из них 1 runtime ws;
-остальные ajv, brace-expansion, diff, flatted, js-yaml, minimatch.
-Не приравнивать эти findings к доказанной удалённой эксплуатации игрового сервера.
-Действие: выбрать актуальные стабильные версии под поддерживаемую Node.js,
-проверить breaking changes и совместимость инструментов, обновить manifest/lockfile.
-Критерий: чистая установка npm ci, успешные сборка, линтер и регрессионные тесты;
-повторные npm outdated и npm audit с разбором оставшихся предупреждений.
+[x] [P2] Обновить все зависимости.
+Обновлены ws, ESLint/TypeScript tooling, @types, транзитивные зависимости; ts-node заменён
+на tsx. Actions обновлены до v6 и закреплены SHA. npm audit: 0 уязвимостей.
+TypeScript ~6.0.3 оставлен из-за peer limit typescript-eslint <6.1; @types/node24
+соответствует поддерживаемой Node24. Это обоснованные caps, не забытые обновления.
+Файлы: package.json, package-lock.json, .github/workflows/ci.yml. Проверены npm outdated,
+чистая установка, сборка/линтер/тесты на Node24.21.0 и Node26.4.0.
+PR: ожидает публикации.
 
-[P2] Некорректный roomEntryTimestamp в событиях — src/Room.ts.
-Воспроизведено: playerEnter отправляется до обновления roomEntryTimestamp и содержит
-null при первом входе либо timestamp предыдущей комнаты при reconnect.
-Действие: обновлять согласованное состояние до broadcast; тестировать payload.
+[x] [P2] roomEntryTimestamp в событиях.
+Согласованное состояние устанавливается до playerEnter/onRoomEnter; replacement не
+сбрасывает время членства. Файлы: src/Server.ts. Timestamp/snapshot tests проходят.
+PR: ожидает публикации.
 
-[P3] Сортировка getPlayers не задаёт согласованный порядок — src/MessageHandler.ts.
-Изолированный тест реального handler с timestamps [200, null, 100] возвращает тот же
-порядок: активные игроки идут 200 -> 100. Comparator считает null равным любому времени,
-что нарушает транзитивность равенства и не гарантирует заявленный порядок входа.
-Действие: определить место null в сортировке, использовать согласованный comparator
-и при необходимости tie-breaker; тест списка с игроками из lobby и комнат.
+[x] [P3] Сортировка getPlayers.
+Сортировка по timestamp, null в конце, playerId tie-breaker; subset lookup без полного
+обхода аккаунтов. Файлы: src/Server.ts. Смешанные списки/subset/TTL проверены.
+PR: ожидает публикации.
 
-[P3] RTT доверяет произвольному клиентскому времени — src/MessageHandler.ts: Pong.
-По коду: Date.now()-data без проверки outstanding ping/типа/диапазона; можно получить
-отрицательный/некорректный RTT. Действие: хранить server-side ping timestamp/nonce,
-проверять ответ; не использовать клиентское значение как надёжную метрику/допуск.
+[x] [P3] Недоверенный RTT.
+Принимается только один ответ на outstanding server timestamp; чужие/replayed значения
+RTT не меняют. Файлы: src/Server.ts. Forgery/replay и heartbeat tests проходят.
+PR: ожидает публикации.
 
-[P3] Избыточные обходы и сериализация — src/MessageHandler.ts, src/Room.ts,
-src/Server.ts.
-getPlayers(subset) обходит всю историю players и делает includes для каждого;
-рассылки в lobby тоже обходят все аккаунты. sendToRoom сериализует один payload для
-каждого получателя, в отличие от sendToOthers. По таймеру на комнату и соединение.
-Действие: после исправления lifecycle измерить нагрузку; точечный lookup/Set для subset,
-отдельный индекс online/lobby, один JSON на рассылку. Общий scheduler вводить только
-при подтверждённой пользе. Производительный предел сервера не измерялся.
-В demo.html физика и shareGameState привязаны к каждому requestAnimationFrame,
-а sendToRoom — к каждому mousemove: скорость игры зависит от FPS, частота сетевых
-сообщений — от монитора/устройства ввода. Отделить simulation tick, render и network
-tick, использовать delta time/фиксированный шаг, throttle/coalescing ввода.
+[x] [P3] Обходы, сериализация и частота обновлений.
+Online index, прямой lookup, одна сериализация на broadcast, один maintenance timer.
+В demo физика 120 Hz с фиксированным шагом и отдельная сеть 20 Hz с coalescing ввода.
+Файлы: src/Server.ts, demo.html, scripts/benchmark.cjs.
+Проверены timing/браузер и bounded benchmark 8/32 клиентов; capacity ceiling не заявляется.
+PR: ожидает публикации.
 
-[P3] Архитектура затрудняет тестирование и сопровождение — src/index.ts,
-src/Server.ts, src/Lobby.ts, tsconfig.json.
-Импорт logMessage из entry point создаёт цикл и побочный запуск сервера при импорте
-классов; singleton, фиксированный порт 8080, неиспользуемый Lobby, много any,
-ES5 target/DOM lib для Node. Действие: вынести logger/bootstrap/config, внедрять
-зависимости, определить типизированный протокол и современные настройки Node.
-Уточнить контракт данных: состояние аккаунтов/комнат только в памяти, binary relay
-не содержит server-authenticated senderId, игровые правила и античит сервер не проверяет.
-Это ограничения выбранной relay-модели, а не автоматически отдельные уязвимости.
+[x] [P3] Архитектура и контракт.
+Side-effect-free Server start/stop, injected config/logger, без singleton/import cycle,
+удалены неиспользуемые Lobby/Utils, no any в серверном протоколе, ES2022/Node types.
+Документированы memory-only состояние, TTL, last-peer disposal, raw binary trust и
+отсутствие античита; это ограничения модели, а не обещанные дополнительные функции.
+Файлы: src/, tsconfig.json, README.md, docs/deployment.md. Изолированные instances проверены.
+PR: ожидает публикации.
 
-Проверки аудита
-- TypeScript: ./node_modules/.bin/tsc --noEmit — успешно на Node v26.4.0 / TS 5.3.3.
-- Базовый сценарий регистрации, входа двух клиентов, JSON и binary relay — успешно.
-- Локальные targeted runtime-тесты: reconnect, room lifecycle, malformed input,
-  retention, shutdown, timestamp — ошибки воспроизведены (см. пункты выше).
-- Runtime harness и журнал находятся вне репозитория:
-  C:/Users/Alex/AppData/Local/Temp/relay-runtime-check.cjs
-  C:/Users/Alex/AppData/Local/Temp/relay-runtime-check.log
-- Ведущий прочитал harness и журнал, повторно запустил runtime harness: exit 0,
-  воспроизведения подтвердились. Отрицательные ответы наблюдались 40–80 мс;
-  длительный heartbeat timeout и полное истощение ресурсов не проверялись.
-- Дополнительный harness ведущего: C:/Users/Alex/AppData/Local/Temp/relay-lead-check.cjs.
-  Exit 0: подтвердил ошибки demo scripts в VM, сортировки getPlayers и запуска
-  на занятом порту. Это выполнение тестов/самопроверка, не отдельное независимое ревью.
-- npm audit и npm audit --omit=dev — найдены уязвимости, код возврата 1.
-- ESLint — не запущен успешно: отсутствует конфигурация.
-- Не выполнялись нагрузочный тест, разрушительные CVE PoC, аудит внешнего деплоя,
-  проверка Git-истории на секреты и полноценный браузерный end-to-end тест.
+Ограничения проверки
+- Независимое ревью не запускалось: Alex запускает его отдельно.
+- Внешний Caddy/TLS deployment, production capacity и разрушающие CVE PoC не проверялись.
+- Изменение auth требует обновления старых клиентов; инструкция миграции в README.md.
+- Актуальный удалённый CI verdict будет виден в PR; локальный Windows SIGTERM skip
+  не выдаётся за проверенный POSIX shutdown.

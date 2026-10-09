@@ -1,7 +1,7 @@
 # Project hardening implementation contract
 
-This is the shared contract for parallel work on the audit in `todo.txt`.
-The lead integrates all branches and maintains todo status/PR links. One integrated PR
+This is the shared contract for parallel work on the [archived audit](audit-baseline.txt).
+The lead integrates all branches and maintains verification reports/PR links. One integrated PR
 will be created only after tests and lead self-checks; no automatic independent review.
 
 ## Workstreams
@@ -12,7 +12,7 @@ will be created only after tests and lead self-checks; no automatic independent 
 3. Client/docs: demo, README, deployment example, demo-specific tests.
 4. Regression tests: black-box server tests against the API below.
 
-Each stream uses a separate Git worktree. No worker changes todo.txt or this contract.
+Each stream uses a separate Git worktree. No worker changes this shared contract.
 
 ## Runtime API (core <-> regression tests)
 

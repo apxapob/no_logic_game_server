@@ -7,7 +7,8 @@ contract update, and the expanded 63-test verification.
 Verification of the integrated change, not an independent review or approval.
 Implementation was split across four worktrees (core, tooling, client/docs, regression
 tests), then integrated and self-checked by the lead. A tester executed final checks.
-Original findings: [audit baseline](audit-baseline.txt). Completion tracking: [todo](../todo.txt).
+Original findings: [audit baseline](audit-baseline.txt). Completed work and discussion:
+[PR #1](https://github.com/apxapob/no_logic_game_server/pull/1).
 
 ## Automated checks
 

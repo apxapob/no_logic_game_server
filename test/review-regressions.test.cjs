@@ -258,15 +258,19 @@ test('paused-reader ping flood stays within the control quota and outbound queue
   await healthy.barrier();
 });
 
-test('manual control replies enforce the byte queue independently of a higher rate quota', async t => {
+test('manual control replies enforce a saturated byte queue independently of a higher rate quota', async t => {
   const { server, url } = await startServer(t, { maxBufferedBytes: 512, maxMessagesPerSecond: 20000 });
   const healthy = await connect(t, url);
   const slow = await connect(t, url, {}, { autoPong: false });
   const original = WebSocket.prototype.pong;
+  let heldSocket;
   let replies = 0;
   let maximumQueued = 0;
   WebSocket.prototype.pong = function (data, ...args) {
     if (this._isServer) {
+      // Hold the real writable queue; do not mock bufferedAmount. A paused
+      // reader alone need not fill the OS TCP buffers with this bounded input.
+      if (!heldSocket) { heldSocket = this._socket; heldSocket.cork(); }
       replies++;
       maximumQueued = Math.max(maximumQueued, this.bufferedAmount + Buffer.byteLength(data) + 2);
     }
@@ -274,16 +278,17 @@ test('manual control replies enforce the byte queue independently of a higher ra
   };
   slow.ws.pause();
   try {
-    // At most 1.25 MB of input; below the configured rate quota. A stopped reader
-    // forces actual network backpressure, not a mocked bufferedAmount getter.
+    // At most 1.25 MB of input, below the configured rate quota. Corking makes
+    // queue saturation deterministic across Windows/Linux TCP buffer sizes.
     for (let i = 0; i < 10000; i++) slow.ws.ping(Buffer.alloc(125, i % 256));
     await eventually(() => server.stats().online === 1, 'control byte-queue enforcement', 2500);
   } finally {
+    if (heldSocket && !heldSocket.destroyed) heldSocket.uncork();
     slow.ws.resume();
     WebSocket.prototype.pong = original;
   }
   await waitClosed(slow);
-  assert.ok(replies > 0 && replies < 10000, `Queue limit did not stop replies: ${replies}`);
+  assert.equal(replies, 4, 'Four 127-byte frames fit; the fifth must not be queued');
   assert.ok(maximumQueued <= 512, `Control queue exceeded budget: ${maximumQueued}`);
   await healthy.barrier();
 });

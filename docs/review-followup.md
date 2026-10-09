@@ -49,13 +49,20 @@ The lead first ran two new regressions against the unchanged baseline: both fail
 - Windows Node 26.4.0 and Node 24.21.0: `npm run check` succeeds, **63 tests: 62 pass,
   one POSIX SIGTERM platform skip**, no failures. Includes clean `npm ci` verification.
 - `npm audit` and `npm audit --omit=dev`: **0 vulnerabilities**.
-- The tester repeated all **11 targeted regressions five times**: every run passed.
+- The tester repeated all **11 targeted regressions five times** on Windows. The lead
+  repeated the final portable harness five times as well; every local run passed.
 - Paused-reader test: at most 1,000 Ping frames of 125 bytes under default quotas.
 - Separate byte-limit test: 10,000 Ping frames (1.25 MB input maximum), quota 20,000,
-  output budget 512 bytes. The offender is terminated before all replies are accepted,
-  and observed manual-Pong queue plus framing never exceeds 512 bytes. This tests the
-  byte limit independently of the ordinary 120-message rate limit. Five repetitions
-  completed in approximately 67–70 ms each; no unbounded stress test was used.
+  output budget 512 bytes. The test corks the real server socket's writable stream
+  (no mocked bufferedAmount) to deterministically hold outgoing bytes. Four 127-byte
+  replies fit; the fifth terminates the offender without being queued. Observed queue
+  plus framing stays within 512 bytes. This tests the byte limit independently of the
+  ordinary 120-message rate limit, without an unbounded stress test.
+- Portability correction: initial commit `0f8f272` passed Windows but failed this one
+  Linux test because it assumed a fixed paused-reader flood necessarily fills the
+  transport queue. OS TCP buffers need not reach that precondition at the same load.
+  The final harness explicitly holds the real writable stream rather than increasing
+  load, loosening the production limit, removing the test, or weakening its assertions.
 - Two real Chromium tabs were checked by the lead with three existing rooms containing
   50 KB gameData each and 50 ms simulated latency. Matchmaking and reconnect succeeded;
   the reconnect scanned three pages (50,639 / 50,355 / 50,321 bytes), all below 65,536.

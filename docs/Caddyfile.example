@@ -1,0 +1,14 @@
+# Replace this example domain and static directory. No access logging is enabled.
+game.example.com {
+    @websocket {
+        path /
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @websocket 127.0.0.1:8080
+    reverse_proxy /healthz 127.0.0.1:8080
+    root * /srv/no-logic-demo
+    file_server {
+        index demo.html
+    }
+}

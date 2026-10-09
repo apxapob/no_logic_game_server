@@ -1,244 +1,138 @@
-<!DOCTYPE>
-<html>
-<head>
-    <meta charset="utf-8"/>
-    <title>Demo</title>
-    <style>
-      body { 
-        margin:0;
-        padding:0;
-      }
-      canvas#game {
-        width:100%;
-        height:100%;
-      }
-      div#p1Div {
-        position: absolute;
-        color: #fff;
-        left: 0;
-      }
-      div#p2Div {
-        position: absolute;
-        color: #fff;
-        right: 0;
-      }
-    </style>
-</head>
-<body>
-  <div id="p1Div">
-    Connecting...
-  </div>
-  <div id="p2Div">
-    Waiting for player...
-  </div>
-  <canvas id="game" ></canvas>
-  <script>
-    //Network
-    var socket = new WebSocket("ws://localhost:8080/")
-    var isRoomOwner = false
-    const p1Div = document.getElementById('p1Div')
-    const p2Div = document.getElementById('p2Div')
-    const gameCanvas = document.getElementById('game')
-    var gameData = {
-      p1pos: 0.5,
-      p1score: 0,
-
-      p2pos: 0.5,
-      p2score: 0,
-
-      ballSize: 0.02,
-      ballX: 0.5,
-      ballY: 0.5,
-      ballSpeedX: 0.0,
-      ballSpeedY: 0.005,
-    }
-    const myPlayerData = {}
-    const opponentData = {}
-
-    const MessageHandler = {
-      accountCreated: data => {
-        myPlayerData.id = data.id
-        myPlayerData.name = data.name
-        myPlayerData.password = data.password
-      },
-      onConnected: data => {
-        socket.send(JSON.stringify({
-          method: "getRooms"
-        }))
-      },
-      onGetRooms: rooms => {
-        const availableRooms = rooms.filter(r => r.players.length === 1)
-        if(availableRooms.length === 0){
-          socket.send(JSON.stringify({
-            method: "createRoom",
-            data: {
-              name: myPlayerData.name,
-              password: null,
-              maxPlayers: 2 
-            }
-          }))
-        } else {
-          socket.send(JSON.stringify({
-            method: "enterRoom",
-            data: {
-              id: availableRooms[0].id,
-              password: null
-            }
-          }))
-        }
-      },
-      onRoomEnter: data => {
-        if(data.ownerId !== myPlayerData.id){
-          opponentData.id = data.ownerId
-          opponentData.name = data.name
-        }
-      },
-      playerEnter: data => {
-        opponentData.id = data.id
-        opponentData.name = data.name
-        gameData.ballSpeedX = 0.005
-      },
-      playerLeft: playerId => {},
-      roomCreated: roomData => {
-        isRoomOwner = true
-      },
-      newGameState: data => {
-        gameData = data
-      },
-      messageFromPlayer: data => {
-        gameData.p2pos = data.msg.p2pos
-      }
-    }
-
-    socket.onopen = function() {
-      console.log("connected")
-    }
-
-    socket.onmessage = function(event) {
-      const msg = JSON.parse(event.data)
-      console.log("message:", msg)
-      if(msg.method){
-        MessageHandler[msg.method](msg.data)
-      }
-    }
-
-    socket.onclose = function(event) {
-      console.log('connection closed code:', event.code, 'reason:', event.reason)
-    }
-
-    socket.onerror = function(error) {
-      console.error("socket error", error)
-    }
-  </script>
-
-  <script>
-    //Game
-    var ctx = gameCanvas.getContext('2d')
-
-    ctx.canvas.width = gameCanvas.offsetWidth
-    ctx.canvas.height = gameCanvas.offsetHeight
-
-    const drawGame = () => {
-      if(myPlayerData.name){
-        if(isRoomOwner){
-          p1Div.innerText = myPlayerData.name + ": " + gameData.p1score
-        } else {
-          p2Div.innerText = myPlayerData.name + ": " + gameData.p2score
-        }
-      }
-      if(opponentData.name){
-        if(isRoomOwner){
-          p2Div.innerText = opponentData.name + ": " + gameData.p2score
-        } else {
-          p1Div.innerText = opponentData.name + ": " + gameData.p1score
-        }
-      }
-
-      ctx.fillStyle = 'black'
-      ctx.fillRect(0,0, ctx.canvas.width, ctx.canvas.height)
-
-      ctx.fillStyle = "white"
-      ctx.fillRect(
-        0, 
-        ctx.canvas.height * (gameData.p1pos - 0.05),
-        ctx.canvas.width * 0.025,
-        ctx.canvas.height * 0.1
-      )
-      ctx.fillRect(
-        ctx.canvas.width * 0.975, 
-        ctx.canvas.height * (gameData.p2pos - 0.05),
-        ctx.canvas.width * 0.025,
-        ctx.canvas.height * 0.1
-      )
-      
-      ctx.beginPath()
-      ctx.arc(
-        ctx.canvas.width * gameData.ballX,
-        ctx.canvas.height * gameData.ballY,
-        ctx.canvas.width * gameData.ballSize,
-        0, Math.PI*2
-      )
-      ctx.fill()
-    }
-
-    const onUpdate = () => {
-      if(isRoomOwner){//only room owner can share game state
-        gameData.ballX += gameData.ballSpeedX
-        gameData.ballY += gameData.ballSpeedY
-        if(gameData.ballX - gameData.ballSize < 0.025 &&
-           Math.abs(gameData.ballY - gameData.p1pos) < 0.05){
-          gameData.ballSpeedX *= -1
-          gameData.ballX = gameData.ballSize + 0.025
-        }
-        if(gameData.ballX + gameData.ballSize > 0.975 &&
-           Math.abs(gameData.ballY - gameData.p2pos) < 0.05){
-          gameData.ballSpeedX *= -1
-          gameData.ballX = -gameData.ballSize + 0.975
-        }
-        if(gameData.ballX + gameData.ballSize > 1){
-          gameData.ballSpeedX *= -1
-          gameData.p1score++
-        }
-        if(gameData.ballX - gameData.ballSize < 0){
-          gameData.ballSpeedX *= -1
-          gameData.p2score++
-        }
-        if(gameData.ballY + gameData.ballSize > 1 ||
-          gameData.ballY - gameData.ballSize < 0){
-          gameData.ballSpeedY *= -1
-        }
-        if(socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({
-            method: "shareGameState",
-            data: {
-              gamestate: gameData
-            }
-          }))
-        }
-      }
-      
-      drawGame()
-
-      window.requestAnimationFrame(onUpdate)
-    }
-    window.requestAnimationFrame(onUpdate)
-
-    const mouseMove = e => {
-      const y = e.pageY / gameCanvas.offsetHeight;
-    
-      if(isRoomOwner){
-        gameData.p1pos = y
-      } else {
-        gameData.p2pos = y
-        if(socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({
-            method: "sendToRoom",
-            data: { p2pos: y }
-          }))
-        }
-      }
-    }
-    gameCanvas.addEventListener('mousemove', mouseMove)
-  </script>
-</body>
-</html>
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Pong demo</title>
+<style>html,body{margin:0;height:100%;background:#000;color:white;font:16px sans-serif}canvas{width:100%;height:100%;display:block}#status{position:absolute;top:8px;left:8px}button{margin-left:8px}</style>
+<div id="status">Connecting…</div><canvas id="game"></canvas>
+<script>
+'use strict';
+const canvas = document.getElementById('game'), ctx = canvas.getContext('2d'), status = document.getElementById('status');
+const TAG = 'no-logic-pong-v2', KEY = TAG + ':account';
+let credentials = null;
+try { credentials = JSON.parse(sessionStorage.getItem(KEY)); } catch { /* Storage may be unavailable. */ }
+// A tab owns its account. Duplicated tabs may clone sessionStorage: claim before connecting.
+const tabId = crypto.randomUUID();
+const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel(TAG) : null;
+if (channel) channel.onmessage = ({data}) => {
+  if (data.type === 'claim' && credentials && data.playerId === credentials.playerId) channel.postMessage({type:'occupied', to:data.tabId});
+  if (data.type === 'occupied' && data.to === tabId && !connected) { credentials = null; try { sessionStorage.removeItem(KEY); } catch {} }
+};
+if (channel && credentials) channel.postMessage({type:'claim', playerId:credentials.playerId, tabId});
+let socket, connected = false, room = null, ownerId = null, started = false, startPending = false, attempts = 0, authFailed = false;
+let matchmakingPending = false, roomsRequested = false;
+let roomPages = [], roomScan = 0;
+let input = .5, dirty = true, lastFrame = null, accumulator = 0;
+let state = {p1pos:.5,p2pos:.5,p1score:0,p2score:0,ballX:.5,ballY:.5,ballSpeedX:.3,ballSpeedY:.24};
+const owner = () => Boolean(credentials && ownerId === credentials.playerId);
+const send = (method, data) => { if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({method,data})); };
+function connect() {
+  connected = false;
+  // Local demo uses 8080; an HTTPS deployment proxies the same-origin WSS endpoint.
+  socket = new WebSocket(location.protocol === 'https:' ? 'wss://' + location.host + '/' : 'ws://127.0.0.1:8080/');
+  const current = socket;
+  socket.onopen = () => { if (current === socket) send('authenticate', credentials ? {playerId:credentials.playerId,password:credentials.password} : {}); };
+  socket.onmessage = event => {
+    if (current !== socket || typeof event.data !== 'string') return;
+    try { const message = JSON.parse(event.data); if (Object.hasOwn(handlers, message.method)) handlers[message.method](message.data, message); } catch { status.textContent = 'Invalid server message'; }
+  };
+  socket.onerror = () => { status.textContent = 'Connection unavailable'; };
+  socket.onclose = () => {
+    if (current !== socket) return;
+    connected = false; room = null; ownerId = null; started = false; startPending = false; matchmakingPending = false; roomsRequested = false; roomPages = []; roomScan++;
+    if (authFailed) return;
+    status.textContent = 'Disconnected; reconnecting…';
+    setTimeout(connect, Math.min(10000, 500 * 2 ** Math.min(attempts++, 5)) + Math.random()*250);
+  };
+}
+function maybeStart() {
+  if (owner() && room && room.players.length === 2 && !started && !startPending) { startPending = true; send('startGame', state); }
+}
+function soloWaiting() {
+  return room && owner() && !started && !startPending && !room.hasPassword && room.maxPlayers === 2 && room.players.length === 1 && room.gameData && room.gameData.demo === TAG;
+}
+function requestRooms() {
+  if (!connected || matchmakingPending || roomsRequested || (room && !soloWaiting())) return;
+  roomsRequested = true; roomPages = []; roomScan++;
+  send('getRooms');
+}
+function findRoom(rooms) {
+  roomsRequested = false;
+  if (!connected || matchmakingPending || (room && !soloWaiting())) return;
+  const demoRooms = rooms.filter(r => r.gameData && r.gameData.demo === TAG && !r.hasPassword && r.maxPlayers === 2);
+  // The server exposes started rooms only to active/eligible accounts.
+  const resumed = !room && demoRooms.find(r => r.gameStarted && r.players.length < r.maxPlayers);
+  const open = demoRooms.filter(r => !r.gameStarted && r.players.length === 1);
+  if (room && !open.some(r => r.roomId === room.roomId)) open.push(room);
+  open.sort((a,b) => a.roomId < b.roomId ? -1 : a.roomId > b.roomId ? 1 : 0);
+  const match = resumed || open[0];
+  if (room && (!match || match.roomId === room.roomId)) return;
+  matchmakingPending = true;
+  if (room) {
+    // WebSocket frames are ordered: revoke old membership before entering.
+    // Clear local membership immediately so network ticks cannot send stale input/state.
+    send('leaveRoom'); room = null; ownerId = null; started = false;
+  }
+  if (match) send('enterRoom', {roomId:match.roomId,password:null});
+  else send('createRoom', {name:'Pong',maxPlayers:2,password:null,gameData:{demo:TAG}});
+}
+const handlers = {
+  accountCreated(data) { credentials = {playerId:data.playerId,password:data.password}; try { sessionStorage.setItem(KEY, JSON.stringify(credentials)); } catch {} },
+  onConnected() { connected = true; attempts = 0; status.textContent = 'Waiting for opponent'; const current = socket; setTimeout(() => { if (current === socket) requestRooms(); }, 100); },
+  onGetRooms(data, envelope) {
+    if (!roomsRequested) return;
+    // Keep only demo candidates; unrelated large metadata need not accumulate in the UI.
+    roomPages.push(...data.filter(r => r.gameData && r.gameData.demo === TAG));
+    if (typeof envelope.nextCursor === 'string') {
+      const scan = roomScan, current = socket;
+      // Pace continuation requests instead of bursting through the incoming rate quota.
+      setTimeout(() => { if (connected && current === socket && scan === roomScan && roomsRequested) send('getRooms', {after:envelope.nextCursor}); }, 25);
+    } else { const complete = roomPages; roomPages = []; findRoom(complete); }
+  },
+  onRoomEnter(data) { matchmakingPending = false; roomsRequested = false; roomPages = []; roomScan++; room = data; ownerId = data.ownerId; started = data.gameStarted; dirty = true; if (started && !owner()) send('requestGameState'); maybeStart(); },
+  roomCreated() {}, roomDeleted() {}, roomBlock() {},
+  playerEnter(data) { if (room && !room.players.includes(data.playerId)) room.players.push(data.playerId); maybeStart(); },
+  playerLeft(id) { removePlayer(id); }, playerDisconnected(id) { removePlayer(id); },
+  newRoomOwner(id) { ownerId = id; dirty = true; if (room) room.ownerId = id; maybeStart(); },
+  gameStarted(data) { started = true; startPending = false; if (validState(data)) state = data; },
+  newGameState(data) { if (!owner() && validState(data)) state = data; },
+  gameStateRequested(data) { if (owner() && data && data.playerId) send('shareGameState', {gamestate:state,to:[data.playerId]}); },
+  messageFromPlayer(data) { if (owner() && room && room.players.includes(data.from) && data.from !== ownerId && data.msg && Number.isFinite(data.msg.y)) state.p2pos = clamp(data.msg.y); },
+  Ping(data) { if (Number.isFinite(data)) send('Pong', data); },
+  RoomRTT(data) { if (data && credentials && Number.isFinite(data[credentials.playerId])) status.textContent = 'RTT ' + Math.round(data[credentials.playerId]) + ' ms'; },
+  error(data) { status.textContent = 'Server error: ' + (data && data.code || 'unknown'); startPending = false; matchmakingPending = false; roomsRequested = false; roomPages = []; roomScan++; /* Retry on the bounded matchmaking tick, not on every error. */ },
+  wrongPassword() { authFailed = true; credentials = null; try { sessionStorage.removeItem(KEY); } catch {} status.textContent = 'Credentials expired or rejected. '; const button = document.createElement('button'); button.textContent = 'New guest'; button.onclick = () => location.reload(); status.appendChild(button); }
+};
+function removePlayer(id) { if (room) room.players = room.players.filter(p => p !== id); }
+function clamp(y) { return Math.max(.05, Math.min(.95,y)); }
+function validState(s) { return s && Object.keys(state).every(k => Number.isFinite(s[k])); }
+function step(dt) {
+  if (!owner() || !started || !room || room.players.length !== 2) return;
+  state.p1pos = input;
+  state.ballX += state.ballSpeedX * dt; state.ballY += state.ballSpeedY * dt;
+  if (state.ballY < .02 || state.ballY > .98) { state.ballY = Math.max(.02,Math.min(.98,state.ballY)); state.ballSpeedY *= -1; }
+  if (state.ballSpeedX < 0 && state.ballX < .045 && Math.abs(state.ballY-state.p1pos) < .07) { state.ballX = .045; state.ballSpeedX *= -1; }
+  if (state.ballSpeedX > 0 && state.ballX > .955 && Math.abs(state.ballY-state.p2pos) < .07) { state.ballX = .955; state.ballSpeedX *= -1; }
+  if (state.ballX < 0 || state.ballX > 1) { if (state.ballX > 1) state.p1score++; else state.p2score++; state.ballX = state.ballY = .5; state.ballSpeedX *= -1; }
+}
+function networkTick() {
+  if (!connected || !room) return;
+  if (owner() && started) send('shareGameState', {gamestate:state});
+  else if (!owner() && dirty) { send('sendToRoom', {y:input}); dirty = false; }
+}
+setInterval(networkTick, 50); // 20 Hz, independent of rendering and pointer frequency.
+setInterval(requestRooms, 2000); // Only unattached clients and waiting solo demo owners; one request in flight.
+function resize() { canvas.width = Math.round(innerWidth * (devicePixelRatio || 1)); canvas.height = Math.round(innerHeight * (devicePixelRatio || 1)); }
+addEventListener('resize', resize); resize();
+canvas.addEventListener('pointermove', event => { const rect = canvas.getBoundingClientRect(); input = clamp((event.clientY-rect.top)/rect.height); dirty = true; });
+function frame(now) {
+  if (lastFrame !== null) accumulator += Math.min(.1, (now-lastFrame)/1000);
+  lastFrame = now;
+  while (accumulator >= 1/120) { step(1/120); accumulator -= 1/120; }
+  const w = canvas.width, h = canvas.height;
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,w,h); ctx.fillStyle = '#fff';
+  ctx.fillRect(0,(state.p1pos-.05)*h,.025*w,.1*h); ctx.fillRect(.975*w,(state.p2pos-.05)*h,.025*w,.1*h);
+  ctx.beginPath(); ctx.arc(state.ballX*w,state.ballY*h,.02*Math.min(w,h),0,Math.PI*2); ctx.fill();
+  ctx.font = '24px sans-serif'; ctx.fillText(state.p1score + ' : ' + state.p2score,w/2,h*.08);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+setTimeout(connect, 100);
+</script></html>

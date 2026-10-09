@@ -1,3 +1,7 @@
+# Generated TypeScript output
+dist/
+*.tsbuildinfo
+
 # Logs
 logs
 *.log

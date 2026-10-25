@@ -1,19 +1,21 @@
 import { createServer, Server as HttpServer } from 'node:http';
 import { AddressInfo, Socket } from 'node:net';
 import WebSocket, { RawData, WebSocketServer } from 'ws';
-import { timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { ServerOptions, ResolvedOptions, resolveOptions } from './config';
 import { Player, WSMessage } from './Player';
 import { Room } from './Room';
 import { isRecord, ProtocolMessage, validateMessage } from './MessageHandler';
+import { redact } from './Logging';
 export type { ServerOptions } from './config';
 interface Connection {
+  id: string; ip: string;
   ws: WebSocket; player: Player | null; created: number; activity: number;
   pingAt: number | null; lastPing: number; rateAt: number; messages: number;
   delayedBytes: number; timers: Set<NodeJS.Timeout>;
 }
 interface Attempts { since: number; count: number }
-interface Transport { created: number; websocket: boolean; ip: string }
+interface Transport { id: string; created: number; websocket: boolean; ip: string }
 const roomIndependentMethods = new Set(['getRooms', 'getPlayers', 'changeName', 'createRoom', 'enterRoom', 'leaveRoom']);
 export class Server {
   readonly options: ResolvedOptions;
@@ -32,7 +34,34 @@ export class Server {
   private readonly startupAbort = new AbortController();
   private cancelStartup: (() => void) | null = null;
   constructor(options: ServerOptions = {}) { this.options = resolveOptions(options); }
-  private log(text: string): void { try { this.options.logger(text); } catch { /* Logging must not affect lifecycle. */ } }
+  private log(text: string): void {
+    try { this.options.logger(this.options.verboseLogs ? JSON.stringify({ time: new Date().toISOString(), event: text }) : text); }
+    catch { /* Logging must not affect lifecycle. */ }
+  }
+  private trace(event: string, details: Record<string, unknown> = {}, c?: Connection): void {
+    if (!this.options.verboseLogs) return;
+    try {
+      this.options.logger(JSON.stringify({ time: new Date().toISOString(), event,
+        ...(c ? { connectionId: c.id, ip: c.ip, playerId: c.player?.playerId ?? null, roomId: c.player?.roomId ?? null } : {}),
+        ...details }));
+    } catch { /* A diagnostic sink must not interrupt message handling. */ }
+  }
+  private frame(c: Connection, direction: 'in' | 'out', type: 'text' | 'binary' | 'ping' | 'pong', bytes: string | Buffer): void {
+    if (!this.options.verboseLogs) return;
+    const buffer = typeof bytes === 'string' ? Buffer.from(bytes) : bytes;
+    let payload: unknown;
+    if (type === 'text') {
+      try { payload = redact(JSON.parse(buffer.toString())); }
+      catch { payload = '[omitted: invalid JSON]'; }
+    } else payload = buffer.toString('base64');
+    this.trace('message', { direction, type, bytes: buffer.length, encoding: type === 'text' ? 'json' : 'base64', payload }, c);
+  }
+  private terminate(c: Connection, reason: string): void {
+    this.trace('connection.terminate', { reason }, c); c.ws.terminate();
+  }
+  private closeConnection(c: Connection, code: number, reason: string): void {
+    this.trace('connection.close_requested', { code, reason }, c); c.ws.close(code, reason);
+  }
   address(): AddressInfo | null {
     const address = this.http?.address();
     return typeof address === 'object' && address !== null ? address : null;
@@ -47,6 +76,9 @@ export class Server {
     if (this.state !== 'new') return Promise.reject(new Error('Server is not startable'));
     this.state = 'starting';
     const http = createServer((req, res) => {
+      this.trace('http.request', { connectionId: this.transports.get(req.socket)?.id,
+        method: req.method, route: req.url === '/healthz' ? '/healthz' : 'other',
+        status: this.state === 'running' && req.method === 'GET' && req.url === '/healthz' ? 200 : 404 });
       if (this.state === 'running' && req.method === 'GET' && req.url === '/healthz') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok', ...this.stats() }));
@@ -56,21 +88,30 @@ export class Server {
     // HTTP does not own upgraded sockets; track every accepted TCP transport ourselves.
     http.on('connection', socket => {
       const ip = socket.remoteAddress ?? 'unknown';
+      const id = randomUUID();
       if (this.state !== 'running' || this.transports.size >= this.options.maxConnections || !this.admit(ip)) {
+        this.trace('transport.rejected', { connectionId: id, ip, reason: this.state !== 'running' ? 'server_not_running' : 'connection_limit' });
         socket.destroy(); return;
       }
-      this.transports.set(socket, { created: Date.now(), websocket: false, ip });
-      socket.on('error', () => socket.destroy());
-      socket.once('close', () => this.transports.delete(socket));
+      this.transports.set(socket, { id, created: Date.now(), websocket: false, ip });
+      this.trace('transport.connected', { connectionId: id, ip, port: socket.remotePort });
+      socket.on('error', (error: NodeJS.ErrnoException) => {
+        this.trace('transport.error', { connectionId: id, code: error.code }); socket.destroy();
+      });
+      socket.once('close', hadError => {
+        this.trace('transport.disconnected', { connectionId: id, ip, hadError }); this.transports.delete(socket);
+      });
     });
     const wss = new WebSocketServer({ noServer: true, maxPayload: this.options.maxPayloadBytes, perMessageDeflate: false, autoPong: false });
     this.wss = wss;
     wss.on('error', () => this.log('websocket server error'));
-    wss.on('connection', ws => this.connected(ws));
+    wss.on('connection', (ws, req) => this.connected(ws, this.transports.get(req.socket)));
     http.on('upgrade', (req, socket, head) => {
       const origin = req.headers.origin;
       const permitted = origin === undefined ? this.options.allowNoOrigin : this.options.allowedOrigins.includes(origin);
       if (this.state !== 'running' || req.url !== '/' || !permitted || !this.transports.has(req.socket)) {
+        this.trace('upgrade.rejected', { connectionId: this.transports.get(req.socket)?.id,
+          reason: this.state !== 'running' ? 'server_not_running' : req.url !== '/' ? 'invalid_path' : !permitted ? 'origin_not_allowed' : 'unknown_transport' });
         socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n', () => socket.destroy());
         return;
       }
@@ -80,10 +121,11 @@ export class Server {
           if (transport) transport.websocket = true;
           wss.emit('connection', ws, req);
         });
-      } catch { socket.destroy(); }
+      } catch { this.trace('upgrade.error', { connectionId: this.transports.get(req.socket)?.id }); socket.destroy(); }
     });
     this.startPromise = new Promise<void>((resolve, reject) => {
       const failure = (error: Error = new Error('Server startup failed')): void => {
+        this.trace('server.start_failed', { code: (error as NodeJS.ErrnoException).code });
         http.removeListener('listening', ready);
         http.removeListener('error', failure);
         this.cancelStartup = null;
@@ -98,7 +140,7 @@ export class Server {
         if (this.state !== 'starting') { reject(new Error('Server stopped during startup')); return; }
         this.state = 'running';
         this.maintenance = setInterval(() => this.sweep(), this.options.maintenanceIntervalMs);
-        this.log('server started'); resolve();
+        this.log('server started'); this.trace('server.listening', { address: this.address() }); resolve();
       };
       http.once('error', failure);
       http.once('listening', ready);
@@ -112,6 +154,7 @@ export class Server {
     if (this.stopPromise) return this.stopPromise;
     const wasStarting = this.state === 'starting';
     this.state = 'stopping';
+    this.trace('server.stopping', this.stats());
     this.cancelStartup?.();
     if (wasStarting) this.startupAbort.abort();
     if (this.maintenance) clearInterval(this.maintenance);
@@ -120,11 +163,11 @@ export class Server {
     this.stopPromise = (async () => {
       await this.startPromise?.catch(() => undefined);
       const deadline = setTimeout(() => {
-        for (const c of this.connections.values()) c.ws.terminate();
+        for (const c of this.connections.values()) this.terminate(c, 'shutdown_timeout');
         this.http?.closeAllConnections();
         for (const socket of this.transports.keys()) socket.destroy();
       }, this.options.shutdownTimeoutMs);
-      for (const c of this.connections.values()) c.ws.close(1001, 'Server shutting down');
+      for (const c of this.connections.values()) this.closeConnection(c, 1001, 'Server shutting down');
       await Promise.all([
         new Promise<void>(resolve => {
           if (!this.wss) { resolve(); return; }
@@ -169,18 +212,22 @@ export class Server {
     for (const transport of this.transports.values()) if (transport.ip === ip) perIp++;
     return perIp < this.options.maxConnectionsPerIp;
   }
-  private connected(ws: WebSocket): void {
+  private connected(ws: WebSocket, transport?: Transport): void {
     if (this.state !== 'running') { ws.terminate(); return; }
     const now = Date.now();
-    const c: Connection = { ws, player: null,
+    const c: Connection = { ws, player: null, id: transport?.id ?? randomUUID(), ip: transport?.ip ?? 'unknown',
       created: now, activity: now, pingAt: null, lastPing: now, rateAt: now,
       messages: 0, delayedBytes: 0, timers: new Set() };
     this.connections.set(ws, c);
+    this.trace('connection.connected', {}, c);
     ws.on('message', (raw, binary) => this.receive(c, raw, binary));
     ws.on('ping', data => this.control(c, data, true));
     ws.on('pong', data => this.control(c, data, false));
-    ws.on('error', () => { this.log('socket error'); ws.terminate(); });
-    ws.on('close', () => {
+    ws.on('error', (error: NodeJS.ErrnoException) => {
+      this.log('socket error'); this.trace('connection.error', { code: error.code }, c); this.terminate(c, 'socket_error');
+    });
+    ws.on('close', (code, reason) => {
+      this.trace('connection.disconnected', { code, reason: reason.toString(), durationMs: Date.now() - c.created }, c);
       this.clearDelays(c); this.connections.delete(ws);
       const p = c.player;
       if (!p || p.ws !== ws) return;
@@ -199,21 +246,25 @@ export class Server {
     const now = Date.now();
     if (now - c.rateAt >= 1000) { c.rateAt = now; c.messages = 0; }
     // Termination cannot itself enqueue a close frame behind a saturated socket.
-    if (++c.messages > this.options.maxMessagesPerSecond) { c.ws.terminate(); return false; }
+    if (++c.messages > this.options.maxMessagesPerSecond) { this.terminate(c, 'message_rate_limit'); return false; }
     c.activity = now;
     return true;
   }
   private control(c: Connection, bytes: Buffer, reply: boolean): void {
+    this.frame(c, 'in', reply ? 'ping' : 'pong', bytes);
     if (!this.allowInbound(c) || !reply) return;
     // RFC control replies bypass send(), so account for their two-byte header here.
     if (!this.reserveOutput(c, bytes.length + 2)) return;
-    try { c.ws.pong(bytes, false, error => { if (error) c.ws.terminate(); }); }
-    catch { c.ws.terminate(); }
+    try {
+      c.ws.pong(bytes, false, error => { if (error) this.terminate(c, 'pong_send_error'); });
+      this.frame(c, 'out', 'pong', bytes);
+    } catch { this.terminate(c, 'pong_send_error'); }
   }
   private receive(c: Connection, raw: RawData, binary: boolean): void {
-    if (!this.allowInbound(c)) return;
     const bytes = Array.isArray(raw) ? Buffer.concat(raw) : raw instanceof ArrayBuffer ? Buffer.from(raw) : raw;
-    if (bytes.length > this.options.maxPayloadBytes) { c.ws.close(1009, 'Message too large'); return; }
+    this.frame(c, 'in', binary ? 'binary' : 'text', bytes);
+    if (!this.allowInbound(c)) return;
+    if (bytes.length > this.options.maxPayloadBytes) { this.closeConnection(c, 1009, 'Message too large'); return; }
     if (binary) {
       if (!c.player) { this.error(c, 'invalid_message'); return; }
       if (!this.messageFits(bytes.length)) { this.error(c, 'payload_too_large'); return; }
@@ -245,16 +296,18 @@ export class Server {
   private schedule(c: Connection, size: number, action: () => void, roomScoped = true): void {
     if (this.options.sendDelayMs === 0) { action(); return; }
     if (c.delayedBytes + size > this.options.maxBufferedBytes || c.timers.size >= this.options.maxMessagesPerSecond) {
-      c.ws.close(1008, 'Delay limit'); return;
+      this.closeConnection(c, 1008, 'Delay limit'); return;
     }
     const p = c.player;
     const version = p?.membershipVersion;
     c.delayedBytes += size;
+    this.trace('message.delayed', { bytes: size, delayMs: this.options.sendDelayMs, roomScoped }, c);
     const timer = setTimeout(() => {
       c.timers.delete(timer); c.delayedBytes -= size;
       // Global queries and ordered leave/enter commands survive membership changes;
       // room-scoped traffic must never migrate into a later room or session.
       if (this.current(c) && p === c.player && (!roomScoped || p?.membershipVersion === version)) action();
+      else this.trace('message.discarded', { reason: 'session_or_room_changed', bytes: size }, c);
     }, this.options.sendDelayMs);
     c.timers.add(timer);
   }
@@ -268,24 +321,26 @@ export class Server {
       const provided = Buffer.from(typeof data.password === 'string' ? data.password : '');
       const secret = Buffer.from(retained?.password ?? '');
       if (!retained || secret.length !== provided.length || !timingSafeEqual(secret, provided)) {
-        this.sendConnection(c, { method: 'wrongPassword' }); c.ws.close(1008, 'Authentication failed'); return;
+        this.trace('authentication.failed', {}, c);
+        this.sendConnection(c, { method: 'wrongPassword' }); this.closeConnection(c, 1008, 'Authentication failed'); return;
       }
       p = retained;
       const old = p.ws;
       p.ws = c.ws;
       if (old && old !== c.ws) {
         const oldConnection = this.connections.get(old);
-        if (oldConnection) this.clearDelays(oldConnection);
-        old.terminate();
+        if (oldConnection) { this.clearDelays(oldConnection); this.terminate(oldConnection, 'session_replaced'); }
+        else old.terminate();
       }
       if (typeof data.name === 'string') p.playerName = data.name;
     } else {
-      if (this.players.size >= this.options.maxAccounts) { this.error(c, 'limit_exceeded'); c.ws.close(1008, 'Account limit'); return; }
+      if (this.players.size >= this.options.maxAccounts) { this.error(c, 'limit_exceeded'); this.closeConnection(c, 1008, 'Account limit'); return; }
       p = new Player(typeof data.name === 'string' ? data.name : 'Player');
       this.players.set(p.playerId, p); created = true;
     }
     p.ws = c.ws; p.offlineSince = null; p.rtt = null;
     c.player = p; this.online.add(p);
+    this.trace('authentication.succeeded', { created }, c);
     if (created) this.sendConnection(c, { method: 'accountCreated', data: { name: p.playerName, playerId: p.playerId, password: p.password } });
     this.sendConnection(c, { method: 'onConnected', data: { online: this.online.size } });
     // Session replacement retains actual membership and its original entry timestamp.
@@ -311,15 +366,19 @@ export class Server {
   }
   private reserveOutput(c: Connection, size: number): boolean {
     if (!this.current(c)) return false;
-    if (c.ws.bufferedAmount + size > this.options.maxBufferedBytes) { c.ws.terminate(); return false; }
+    if (c.ws.bufferedAmount + size > this.options.maxBufferedBytes) { this.terminate(c, 'output_buffer_limit'); return false; }
     return true;
   }
   private write(c: Connection, bytes: string | Buffer, binary: boolean): void {
     const size = typeof bytes === 'string' ? Buffer.byteLength(bytes) : bytes.length;
     // An oversized server message is not evidence that its recipient is slow.
-    if (!this.messageFits(size) || !this.reserveOutput(c, size + 10)) return;
-    try { c.ws.send(bytes, { binary }, error => { if (error) c.ws.terminate(); }); }
-    catch { c.ws.terminate(); }
+    if (!this.messageFits(size) || !this.reserveOutput(c, size + 10)) {
+      this.trace('message.not_sent', { bytes: size, reason: !this.messageFits(size) ? 'payload_too_large' : 'connection_unavailable' }, c); return;
+    }
+    try {
+      c.ws.send(bytes, { binary }, error => { if (error) this.terminate(c, 'send_error'); });
+      this.frame(c, 'out', binary ? 'binary' : 'text', bytes);
+    } catch { this.terminate(c, 'send_error'); }
   }
   private sendBytes(p: Player, bytes: string | Buffer, binary = false): void {
     const c = p.ws ? this.connections.get(p.ws) : undefined;
@@ -329,8 +388,12 @@ export class Server {
     const c = p.ws ? this.connections.get(p.ws) : undefined;
     if (c) this.sendConnection(c, message);
   }
-  private error(c: Connection, code: string): void { this.sendConnection(c, { method: 'error', data: { code, text: code } }); }
-  private playerError(p: Player, code: string): void { this.send(p, { method: 'error', data: { code, text: code } }); }
+  private error(c: Connection, code: string): void {
+    this.trace('protocol.error', { code }, c); this.sendConnection(c, { method: 'error', data: { code, text: code } });
+  }
+  private playerError(p: Player, code: string): void {
+    this.trace('protocol.error', { code, playerId: p.playerId, roomId: p.roomId }); this.send(p, { method: 'error', data: { code, text: code } });
+  }
   private activeRoom(p: Player): Room | undefined {
     const room = p.roomId ? this.rooms.get(p.roomId) : undefined;
     return room?.active.has(p.playerId) ? room : undefined;
@@ -390,6 +453,7 @@ export class Server {
     if (room.active.size >= room.maxPlayers) { this.playerError(p, 'full_room'); return; }
     p.roomId = id; p.roomEntryTimestamp = Date.now(); p.membershipVersion++;
     room.active.add(p.playerId); room.reservations.delete(p.playerId);
+    this.trace('room.entered', { roomId: room.roomId, playerId: p.playerId });
     this.broadcast(room, { method: 'playerEnter', data: p.toNetObject() }, p.playerId);
     this.send(p, { method: 'onRoomEnter', data: this.roomDto(room) });
   }
@@ -398,18 +462,21 @@ export class Server {
     p.roomId = null; p.roomEntryTimestamp = null; p.membershipVersion++;
     if (!disconnected) for (const r of this.rooms.values()) r.reservations.delete(p.playerId);
     if (!room) return;
+    this.trace('room.left', { roomId: room.roomId, playerId: p.playerId, disconnected });
     room.active.delete(p.playerId);
     if (disconnected && room.gameStarted) room.reservations.add(p.playerId);
     else room.reservations.delete(p.playerId);
     this.broadcast(room, { method: disconnected ? 'playerDisconnected' : 'playerLeft', data: p.playerId });
     if (room.active.size === 0) {
       room.reservations.clear(); this.rooms.delete(room.roomId);
+      this.trace('room.deleted', { roomId: room.roomId });
       this.lobby({ method: 'roomDeleted', data: room.roomId }); return;
     }
     if (room.ownerId === p.playerId) {
       const nextOwner = room.active.values().next().value;
       if (nextOwner !== undefined) {
         room.ownerId = nextOwner;
+        this.trace('room.owner_changed', { roomId: room.roomId, ownerId: nextOwner });
         this.broadcast(room, { method: 'newRoomOwner', data: room.ownerId });
       }
     }
@@ -452,7 +519,9 @@ export class Server {
         if (typeof record.name !== 'string' || typeof record.maxPlayers !== 'number') return;
         const room = new Room(record.name, p.playerId, record.maxPlayers, typeof record.password === 'string' ? record.password : null, record.gameData ?? null);
         if (!this.roomFits(room)) { this.playerError(p, 'payload_too_large'); return; }
-        this.rooms.set(room.roomId, room); this.enter(p, room.roomId, room.password);
+        this.rooms.set(room.roomId, room);
+        this.trace('room.created', { roomId: room.roomId, ownerId: p.playerId });
+        this.enter(p, room.roomId, room.password);
         this.lobby({ method: 'roomCreated', data: this.roomDto(room) }); return;
       }
     }
@@ -480,6 +549,7 @@ export class Server {
           const json = this.prepareRelay(p, { method: 'gameStarted', data: d });
           if (json === null) return;
           room.gameStarted = true; this.broadcastJson(room, json); this.lobby({ method: 'roomBlock', data: room.roomId });
+          this.trace('room.game_started', { roomId: room.roomId, ownerId: p.playerId });
         } else if (message.method === 'shareGameState') {
           const json = this.prepareRelay(p, { method: 'newGameState', data: record.gamestate });
           if (json !== null) this.broadcastJson(room, json, targets ? undefined : p.playerId, targets);
@@ -497,6 +567,7 @@ export class Server {
     for (const [id, p] of this.players) if (!p.ws && p.offlineSince !== null && now - p.offlineSince >= this.options.accountTtlMs) {
       for (const room of this.rooms.values()) room.reservations.delete(id);
       this.players.delete(id);
+      this.trace('account.expired', { playerId: id });
     }
   }
   private sweep(): void {
@@ -504,16 +575,20 @@ export class Server {
     const now = Date.now();
     // Bound pre-upgrade/partial HTTP transports without introducing another timer.
     for (const [socket, transport] of this.transports) {
-      if (!transport.websocket && now - transport.created >= this.options.authTimeoutMs) socket.destroy();
+      if (!transport.websocket && now - transport.created >= this.options.authTimeoutMs) {
+        this.trace('transport.timeout', { connectionId: transport.id }); socket.destroy();
+      }
     }
     let heartbeat = false;
     for (const c of this.connections.values()) {
       if (!this.current(c)) continue;
       if (!c.player) {
-        if (now - c.created >= this.options.authTimeoutMs) c.ws.terminate();
+        if (now - c.created >= this.options.authTimeoutMs) this.terminate(c, 'authentication_timeout');
         continue;
       }
-      if (now - c.activity >= this.options.idleTimeoutMs || (c.pingAt !== null && now - c.pingAt >= this.options.idleTimeoutMs)) { c.ws.terminate(); continue; }
+      if (now - c.activity >= this.options.idleTimeoutMs || (c.pingAt !== null && now - c.pingAt >= this.options.idleTimeoutMs)) {
+        this.terminate(c, 'idle_or_heartbeat_timeout'); continue;
+      }
       if (now - c.lastPing >= this.options.heartbeatIntervalMs) {
         c.lastPing = now; heartbeat = true;
         if (c.pingAt === null) { c.pingAt = now; this.sendConnection(c, { method: 'Ping', data: now }); }

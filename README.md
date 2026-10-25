@@ -148,7 +148,11 @@ Options and matching environment variables (milliseconds unless noted):
 | shutdownTimeoutMs | SHUTDOWN_TIMEOUT_MS | 1000 |
 | allowedOrigins | ALLOWED_ORIGINS (CSV) | http://127.0.0.1:8081,http://localhost:8081 |
 | allowNoOrigin | ALLOW_NO_ORIGIN | true |
-| logger | programmatic only | no-op (CLI uses console) |
+| logger | programmatic only | no-op (CLI uses console, or rotating files in verbose mode) |
+| verboseLogs | VERBOSE_LOGS | false |
+| logDirectory | LOG_DIRECTORY | ./logs |
+| logMaxBytes | LOG_MAX_BYTES | 1073741824 (1 GiB total) |
+| logFileMaxBytes | LOG_FILE_MAX_BYTES | 16777216 (16 MiB per file) |
 
 `configFromEnv` is exported by `src/config.ts`. Invalid numeric/boolean values are rejected; booleans are true/false. CLI `dev` and `delay=N` remain supported; NODE_ENV is not required. Unknown browser Origins, including literal `null`, are rejected; no-Origin native clients are permitted by default.
 
@@ -157,3 +161,63 @@ Connection and per-IP attempt limits include raw TCP/HTTP transports, including 
 Offline accounts expire after TTL. Explicit-ID `getPlayers` requests can return retained offline public DTOs until expiry; no-ID requests return only online players. Disconnect during a started match may preserve reconnect eligibility **only while another member remains active**. Last active disconnect disposes the room; restarts lose all accounts and rooms. State synchronization and owner handoff are the game's responsibility.
 
 See [deployment](docs/deployment.md) for TLS, origin and proxy limitations. No external deployment verification is implied.
+
+## Detailed logs
+
+Enable `VERBOSE_LOGS=true` when starting the CLI. For example, on Linux:
+
+```sh
+VERBOSE_LOGS=true LOG_DIRECTORY=/var/log/no-logic-game-server npm start
+```
+
+The directory must be writable by the service user. The CLI writes JSON Lines to
+`server-00000000000000000001.jsonl`, then successive numbered files. Each record has
+an ISO UTC `time` and `event`. Connection records include `connectionId`, socket IP,
+and, when known, `playerId` and `roomId`. Events cover TCP/WebSocket connections,
+HTTP health requests, rejected upgrades, authentication/replacement, rooms and owner
+changes, game start, expired accounts, protocol errors, shutdown and disconnects.
+Server-initiated disconnects include their reason (rate limit, output buffer limit,
+authentication/heartbeat timeout, replacement, etc.); WebSocket closes include the code
+and peer reason.
+
+`message` records contain `direction` (`in`/`out`), frame `type`, original byte count,
+and `payload`. JSON messages contain their parsed contents; binary and RFC ping/pong
+frames use Base64. `out` means handed to the socket, not acknowledged by the client;
+send failures have a separate event. Delayed/discarded messages are also recorded.
+Frames rejected by the WebSocket parser (for example oversized frames) produce a
+connection error rather than a complete message record.
+
+JSON keys containing password, passwd, secret, token, authorization, cookie, or API key
+are replaced with `[REDACTED]`, recursively, including authentication replies and room
+passwords. Invalid JSON contents are omitted because credentials cannot be safely
+identified. HTTP URL queries/headers are not recorded. Other payloads, including
+chat, names, game data and raw binary contents, are recorded; arbitrary secrets embedded
+in strings or binary data cannot be detected automatically. Treat this directory as
+private diagnostic data. New directories/files use owner-only permissions on POSIX.
+
+`LOG_MAX_BYTES` is the total retained byte budget, including the active file and
+matching log files from previous runs. Before each write, oldest files are deleted
+until the new data fits. Startup also applies a lowered budget. Rotation happens
+around `LOG_FILE_MAX_BYTES`; individual records are never split across files. A
+record larger than that segment target gets its own larger file, within the total
+budget. A record exceeding the entire budget or 8 MiB is replaced by a
+`log.record_too_large` marker. Other filenames are never deleted. Use one server
+process per log directory and keep that directory stable across deployments.
+
+Writes are asynchronous and batched. The memory queue is bounded to 8 MiB; if disk
+writes cannot keep up, excess records are dropped and counted by
+`log.records_dropped` once the queue drains. File errors disable the sink and emit
+one stderr diagnostic, without stopping gameplay. Orderly shutdown flushes pending
+records; abrupt process termination/power loss can lose pending data. Extremely
+small byte budgets may not even fit a diagnostic marker.
+
+Verbose records go only to these files, avoiding an unbounded duplicate in stdout or
+the system journal. With `VERBOSE_LOGS=false` (default), the existing minimal console
+logging remains and no log directory is created. The file budget does not cover nginx
+or system logs. For `new Server({ verboseLogs: true, logger })`, records go to the
+provided callback; library users can supply the exported `RotatingFileLogger` and must
+close it after stopping the server. CLI file settings are applied by `npm start`.
+
+Read a live file with `tail -f /var/log/no-logic-game-server/server-*.jsonl`
+(restart tail after rotation to follow newly created files), or inspect a specific
+connection with `jq 'select(.connectionId == "CONNECTION_ID")' server-*.jsonl`.

@@ -6,6 +6,7 @@ export interface ServerOptions {
   accountTtlMs?: number; heartbeatIntervalMs?: number; idleTimeoutMs?: number;
   authTimeoutMs?: number; maintenanceIntervalMs?: number; shutdownTimeoutMs?: number;
   allowedOrigins?: string[]; allowNoOrigin?: boolean; logger?: (text: string) => void;
+  verboseLogs?: boolean; logDirectory?: string; logMaxBytes?: number; logFileMaxBytes?: number;
 }
 export type ResolvedOptions = Required<ServerOptions>;
 export const defaults: ResolvedOptions = {
@@ -17,6 +18,7 @@ export const defaults: ResolvedOptions = {
   maintenanceIntervalMs: 1000, shutdownTimeoutMs: 1000,
   allowedOrigins: ['http://127.0.0.1:8081', 'http://localhost:8081'],
   allowNoOrigin: true, logger: () => undefined,
+  verboseLogs: false, logDirectory: './logs', logMaxBytes: 1024 ** 3, logFileMaxBytes: 16 * 1024 ** 2,
 };
 export const numericKeys = [
   'port', 'sendDelayMs', 'maxPayloadBytes', 'maxBufferedBytes', 'maxConnections',
@@ -24,18 +26,21 @@ export const numericKeys = [
   'maxMessagesPerSecond', 'maxConnectionsPerMinute', 'accountTtlMs',
   'heartbeatIntervalMs', 'idleTimeoutMs', 'authTimeoutMs', 'maintenanceIntervalMs',
   'shutdownTimeoutMs',
+  'logMaxBytes', 'logFileMaxBytes',
 ] as const;
 export function resolveOptions(options: ServerOptions = {}): ResolvedOptions {
   const result = { ...defaults, ...options, allowedOrigins: [...(options.allowedOrigins ?? defaults.allowedOrigins)] };
   for (const key of numericKeys) {
     const value = result[key];
     const minimum = key === 'port' || key === 'sendDelayMs' ? 0 : 1;
-    if (!Number.isSafeInteger(value) || value < minimum || value > (key === 'port' ? 65535 : 2147483647)) {
+    const maximum = key === 'port' ? 65535 : key === 'logMaxBytes' || key === 'logFileMaxBytes' ? Number.MAX_SAFE_INTEGER : 2147483647;
+    if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
       throw new TypeError(`Invalid option: ${key}`);
     }
   }
   if (typeof result.host !== 'string' || !result.host.trim() ||
       typeof result.devMode !== 'boolean' || typeof result.allowNoOrigin !== 'boolean' ||
+      typeof result.verboseLogs !== 'boolean' || typeof result.logDirectory !== 'string' || !result.logDirectory.trim() ||
       typeof result.logger !== 'function' || !Array.isArray(result.allowedOrigins) ||
       result.allowedOrigins.some(origin => typeof origin !== 'string' || !/^https?:\/\/[^\s/?#]+$/.test(origin))) {
     throw new TypeError('Invalid server options');
@@ -45,6 +50,7 @@ export function resolveOptions(options: ServerOptions = {}): ResolvedOptions {
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env, argv: readonly string[] = process.argv.slice(2)): ServerOptions {
   const options: ServerOptions = {};
   if (env.HOST !== undefined) options.host = env.HOST;
+  if (env.LOG_DIRECTORY !== undefined) options.logDirectory = env.LOG_DIRECTORY;
   for (const key of numericKeys) {
     const envKey = key.replace(/[A-Z]/g, letter => `_${letter}`).toUpperCase();
     const value = env[envKey];
@@ -53,7 +59,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env, argv: readon
       options[key] = Number(value);
     }
   }
-  for (const [key, envKey] of [['allowNoOrigin', 'ALLOW_NO_ORIGIN'], ['devMode', 'DEV_MODE']] as const) {
+  for (const [key, envKey] of [['allowNoOrigin', 'ALLOW_NO_ORIGIN'], ['devMode', 'DEV_MODE'], ['verboseLogs', 'VERBOSE_LOGS']] as const) {
     const value = env[envKey];
     if (value !== undefined) {
       if (value !== 'true' && value !== 'false') throw new TypeError(`Invalid setting: ${envKey}`);

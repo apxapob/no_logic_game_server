@@ -30,6 +30,9 @@ export function validateMessage(value: unknown, maxRoomPlayers: number, maxAccou
     case 'enterRoom': return isRecord(d) && isUuid(d.roomId) && password(d.password);
     case 'createRoom': return isRecord(d) && name(d.name) && Number.isInteger(d.maxPlayers) &&
       typeof d.maxPlayers === 'number' && d.maxPlayers >= 1 && d.maxPlayers <= maxRoomPlayers && password(d.password);
+    case 'updateRoom': return isRecord(d) && (Object.hasOwn(d, 'maxPlayers') || Object.hasOwn(d, 'password')) &&
+      (d.maxPlayers === undefined || (Number.isInteger(d.maxPlayers) && typeof d.maxPlayers === 'number' &&
+        d.maxPlayers >= 1 && d.maxPlayers <= maxRoomPlayers)) && password(d.password);
     case 'shareGameState': return isRecord(d) && Object.hasOwn(d, 'gamestate') && (d.to === undefined || ids(d.to));
     case 'sendTo': return isRecord(d) && ids(d.to) && Object.hasOwn(d, 'msg');
     case 'startGame': case 'sendToRoom': case 'setRoomMeta': return d !== undefined;

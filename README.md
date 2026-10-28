@@ -49,6 +49,7 @@ Text frames are JSON `{method, data}`. IDs are UUIDs; room DTOs use `roomId`, pl
 |---|---|
 | getRooms | omitted/null or `{after?:roomId}` for byte-bounded pages |
 | createRoom | `{name,maxPlayers,password?:string\|null,gameData?:JSON}` |
+| updateRoom | `{maxPlayers?:number,password?:string\|null}`; owner only, before game start. Omitted fields stay unchanged; null/empty password removes it. Capacity cannot be below the current player count. |
 | enterRoom | `{roomId,password?:string\|null}` |
 | leaveRoom | omitted; revokes reconnect eligibility |
 | changeName | new name string |
@@ -72,7 +73,7 @@ Binary frames relay raw bytes to active room peers. **No server-authenticated se
 | onConnected | `{online}` |
 | wrongPassword | authentication rejected; socket closes |
 | onGetRooms | room DTO array; envelope also has `nextCursor:roomId\|null` |
-| roomCreated, onRoomEnter | room DTO |
+| roomCreated, onRoomEnter, roomUpdated | room DTO; settings updates go to all room members and lobby clients, without the password |
 | roomDeleted, roomBlock | roomId |
 | onGetPlayers | public player DTO array |
 | playerEnter | public player DTO |

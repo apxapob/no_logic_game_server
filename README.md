@@ -49,7 +49,7 @@ Text frames are JSON `{method, data}`. IDs are UUIDs; room DTOs use `roomId`, pl
 |---|---|
 | getRooms | omitted/null or `{after?:roomId}` for byte-bounded pages |
 | createRoom | `{name,maxPlayers,password?:string\|null,gameData?:JSON}` |
-| updateRoom | `{maxPlayers?:number,password?:string\|null}`; owner only, before game start. Omitted fields stay unchanged; null/empty password removes it. Capacity cannot be below the current player count. |
+| updateRoom | `{name?:string,maxPlayers?:number,password?:string\|null}`; owner only, before game start. Omitted fields stay unchanged; null/empty password removes it. Names must contain 1–64 characters, with non-whitespace content. Capacity cannot be below the current player count. |
 | enterRoom | `{roomId,password?:string\|null}` |
 | leaveRoom | omitted; revokes reconnect eligibility |
 | changeName | new name string |

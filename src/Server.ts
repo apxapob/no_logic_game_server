@@ -425,12 +425,12 @@ export class Server {
   }
   private roomDto(room: Room) { return room.toNetObject(this.players.get(room.ownerId)?.rtt ?? null); }
   private roomFits(room: Room, metaData: unknown = room.roomMeta, maxPlayers = room.maxPlayers,
-    hasPassword = room.password !== null): boolean {
+    hasPassword = room.password !== null, name = room.roomName): boolean {
     // Reserve growth from future joins, RTT values and the pagination envelope.
     // Otherwise an accepted room could become unreadable merely by filling up.
     // Reject impossible capacities arithmetically before allocating placeholder IDs.
     if (!this.messageFits(maxPlayers * (room.ownerId.length + 3) + 1)) return false;
-    const dto = { ...this.roomDto(room), metaData, maxPlayers, hasPassword, gameStarted: false,
+    const dto = { ...this.roomDto(room), metaData, maxPlayers, hasPassword, name, gameStarted: false,
       players: Array<string>(maxPlayers).fill(room.ownerId), rtt: Number.MAX_SAFE_INTEGER };
     return this.encode({ method: 'onGetRooms', data: [dto], nextCursor: room.roomId }) !== null;
   }
@@ -540,15 +540,17 @@ export class Server {
         if (room.ownerId !== p.playerId) { this.playerError(p, 'not_room_owner'); return; }
         if (room.gameStarted) { this.playerError(p, 'already_started'); return; }
         const maxPlayers = typeof record.maxPlayers === 'number' ? record.maxPlayers : room.maxPlayers;
+        const name = typeof record.name === 'string' ? record.name : room.roomName;
         if (maxPlayers < room.active.size) { this.playerError(p, 'room_too_small'); return; }
         const password = Object.hasOwn(record, 'password')
           ? (typeof record.password === 'string' && record.password.length > 0 ? record.password : null)
           : room.password;
-        if (!this.roomFits(room, room.roomMeta, maxPlayers, password !== null)) {
+        if (!this.roomFits(room, room.roomMeta, maxPlayers, password !== null, name)) {
           this.playerError(p, 'payload_too_large'); return;
         }
         room.maxPlayers = maxPlayers;
         room.password = password;
+        room.roomName = name;
         const updated = { method: 'roomUpdated', data: this.roomDto(room) };
         this.broadcast(room, updated);
         this.lobby(updated);

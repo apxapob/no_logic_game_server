@@ -228,11 +228,17 @@ export class Server {
     });
     ws.on('close', (code, reason) => {
       this.trace('connection.disconnected', { code, reason: reason.toString(), durationMs: Date.now() - c.created }, c);
-      this.clearDelays(c); this.connections.delete(ws);
-      const p = c.player;
-      if (!p || p.ws !== ws) return;
-      this.leave(p, true); p.ws = null; p.offlineSince = Date.now(); this.online.delete(p);
+      this.connections.delete(ws); this.releasePlayer(c);
     });
+  }
+  private releasePlayer(c: Connection): void {
+    this.clearDelays(c);
+    const p = c.player;
+    // A closing transport must not retain membership. Fence repeated cleanup
+    // and late close events from a socket that has already been replaced.
+    if (!p || p.ws !== c.ws) return;
+    p.ws = null; p.offlineSince = Date.now(); this.online.delete(p);
+    this.leave(p, true);
   }
   private current(c: Connection): boolean {
     return this.state === 'running' && this.connections.get(c.ws) === c && c.ws.readyState === WebSocket.OPEN && (!c.player || c.player.ws === c.ws);
@@ -581,6 +587,9 @@ export class Server {
     }
     let heartbeat = false;
     for (const c of this.connections.values()) {
+      // A peer can send Close and disappear before the handshake completes.
+      // Such sockets no longer receive heartbeats and cannot be active players.
+      if (c.ws.readyState !== WebSocket.OPEN) { this.releasePlayer(c); continue; }
       if (!this.current(c)) continue;
       if (!c.player) {
         if (now - c.created >= this.options.authTimeoutMs) this.terminate(c, 'authentication_timeout');

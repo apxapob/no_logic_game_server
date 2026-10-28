@@ -90,7 +90,7 @@ Binary frames relay raw bytes to active room peers. **No server-authenticated se
 
 Room DTO: `{roomId,ownerId,name,players,maxPlayers,hasPassword,gameData,gameStarted,rtt,metaData}`. `players` are active member IDs, never passwords. Public player DTO: `{playerId,name,rtt,roomEntryTimestamp}`; never account secrets or `roomId`. Unknown events should be ignored safely. Invalid/unknown client methods return `invalid_message`. Lifecycle codes: `in_other_room`, `already_in_room`, `no_room`, `wrong_password`, `full_room`, `not_room_owner`, `already_started`, `game_started_without_you`; quotas use `limit_exceeded`. Rate/size abuse may close the socket.
 
-RTT only accepts an outstanding issued timestamp once. Activity/heartbeat maintenance enforces idle timeout; an arbitrary client timestamp does not establish RTT.
+RTT only accepts an outstanding issued timestamp once. Activity/heartbeat maintenance enforces idle timeout; an arbitrary client timestamp does not establish RTT. Other traffic cannot extend the deadline for an unanswered application Ping.
 
 ### Serialized message budgets and pagination
 
@@ -159,6 +159,11 @@ Options and matching environment variables (milliseconds unless noted):
 Connection and per-IP attempt limits include raw TCP/HTTP transports, including health probes, not just authenticated WebSockets. Incomplete and keep-alive HTTP transports are also bounded by `authTimeoutMs`; reserve quota headroom for monitoring. Message rate is per connection. Delayed global/room-transition commands preserve order; queued room-scoped traffic is discarded if membership or session changes.
 
 Offline accounts expire after TTL. Explicit-ID `getPlayers` requests can return retained offline public DTOs until expiry; no-ID requests return only online players. Disconnect during a started match may preserve reconnect eligibility **only while another member remains active**. Last active disconnect disposes the room; restarts lose all accounts and rooms. State synchronization and owner handoff are the game's responsibility.
+
+Room membership is released when the connection closes, or by the next maintenance tick
+if the socket is still closing. Cleanup does not wait for the WebSocket close handshake
+to finish. Silent connections that remain open are removed by the idle/heartbeat timeout.
+A late close from a replaced socket cannot remove the current session.
 
 See [deployment](docs/deployment.md) for TLS, origin and proxy limitations. No external deployment verification is implied.
 

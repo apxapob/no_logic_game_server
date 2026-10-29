@@ -4,6 +4,11 @@ export class Room {
   readonly active = new Set<string>();
   readonly reservations = new Set<string>();
   gameStarted = false;
+  fixedRoster = false;
+  readonly gamePlayers = new Set<string>();
+  canRejoin(playerId: string): boolean {
+    return this.fixedRoster ? this.gamePlayers.has(playerId) : this.reservations.has(playerId);
+  }
   roomMeta: unknown = null;
   constructor(public roomName: string, public ownerId: string, public maxPlayers: number,
     public password: string | null, public gameData: unknown) {}

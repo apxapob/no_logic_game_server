@@ -1,0 +1,85 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { startServer, connect, createRoom, enterRoom, expectError } = require('./helpers.cjs');
+
+test('a started room is private to its original roster and only the same account can rejoin', async t => {
+  const { url } = await startServer(t);
+  const host = await connect(t, url);
+  const peer = await connect(t, url);
+  const outsider = await connect(t, url);
+  const room = await createRoom(host, { maxPlayers: 4, password: 'room-secret' });
+  await outsider.wait('roomCreated');
+  await enterRoom(peer, room, 'room-secret');
+  host.send('startGame', { fixedRoster: true });
+  await peer.wait('gameStarted');
+  await outsider.wait('roomBlock');
+  outsider.send('getRooms');
+  assert.deepEqual((await outsider.wait('onGetRooms')).data, []);
+  await peer.close();
+  await host.wait('playerDisconnected');
+  await outsider.barrier();
+  outsider.assertNo('roomCreated');
+  outsider.send('getRooms');
+  assert.deepEqual((await outsider.wait('onGetRooms')).data, []);
+  await expectError(outsider, 'enterRoom', { roomId: room.roomId, password: 'room-secret' }, 'game_started_without_you');
+  const resumed = await connect(t, url, peer.account);
+  resumed.send('getRooms');
+  assert.equal((await resumed.wait('onGetRooms')).data[0].roomId, room.roomId);
+  const restored = await enterRoom(resumed, room);
+  assert.equal(restored.gameStarted, true);
+  assert.deepEqual(new Set(restored.players), new Set([host.account.playerId, peer.account.playerId]));
+  resumed.send('leaveRoom');
+  await host.wait('playerLeft');
+  assert.equal((await resumed.wait('roomCreated')).data.roomId, room.roomId);
+  await outsider.barrier();
+  outsider.assertNo('roomCreated');
+  await enterRoom(resumed, room);
+});
+
+test('host loss ends a reconnectable room and releases every surviving player into the lobby', async t => {
+  const { server, url } = await startServer(t);
+  const host = await connect(t, url);
+  const peer = await connect(t, url);
+  const room = await createRoom(host);
+  await enterRoom(peer, room);
+  host.send('startGame', { fixedRoster: true });
+  await peer.wait('gameStarted');
+  await host.close();
+  assert.equal((await peer.wait('playerDisconnected')).data, host.account.playerId);
+  await peer.barrier();
+  peer.assertNo('newRoomOwner');
+  assert.equal(server.stats().rooms, 0);
+  await createRoom(peer);
+});
+
+test('replacing a still-open socket pauses the game before the same account re-enters', async t => {
+  const { url } = await startServer(t);
+  const host = await connect(t, url);
+  const peer = await connect(t, url);
+  const room = await createRoom(host);
+  await enterRoom(peer, room);
+  host.send('startGame', { fixedRoster: true });
+  await peer.wait('gameStarted');
+  const resumed = await connect(t, url, peer.account);
+  assert.equal((await host.wait('playerDisconnected')).data, peer.account.playerId);
+  await peer.closePromise;
+  const restored = await enterRoom(resumed, room);
+  assert.equal(restored.players.length, 2);
+  assert.equal((await host.wait('playerEnter')).data.playerId, peer.account.playerId);
+});
+
+test('a reserved participant account does not expire while its game is waiting', async t => {
+  const { url } = await startServer(t, { accountTtlMs: 50 });
+  const host = await connect(t, url);
+  const peer = await connect(t, url);
+  const room = await createRoom(host);
+  await enterRoom(peer, room);
+  host.send('startGame', { fixedRoster: true });
+  await peer.wait('gameStarted');
+  await peer.close();
+  await host.wait('playerDisconnected');
+  await new Promise(resolve => setTimeout(resolve, 120));
+  const resumed = await connect(t, url, peer.account);
+  await enterRoom(resumed, room);
+});

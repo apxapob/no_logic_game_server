@@ -51,11 +51,11 @@ Text frames are JSON `{method, data}`. IDs are UUIDs; room DTOs use `roomId`, pl
 | createRoom | `{name,maxPlayers,password?:string\|null,gameData?:JSON}` |
 | updateRoom | `{name?:string,maxPlayers?:number,password?:string\|null}`; owner only, before game start. Omitted fields stay unchanged; null/empty password removes it. Names must contain 1–64 characters, with non-whitespace content. Capacity cannot be below the current player count. |
 | enterRoom | `{roomId,password?:string\|null}` |
-| leaveRoom | omitted; revokes reconnect eligibility |
+| leaveRoom | omitted; revokes legacy reconnect eligibility, but preserves an original fixed-roster seat |
 | changeName | new name string |
 | getPlayers | IDs array, or null/omitted for online players |
 | sendChatMsg | string |
-| startGame | initial JSON state; owner only. Optional `allowReplacement: true` enables replacement players (see below). |
+| startGame | initial JSON state; owner only. Optional `fixedRoster: true` permanently reserves seats for the original participants (see below). |
 | shareGameState | `{gamestate:JSON,to?:playerId[]}`; owner only |
 | requestGameState | omitted; asks current owner |
 | sendToRoom | JSON to active peers |
@@ -65,11 +65,11 @@ Text frames are JSON `{method, data}`. IDs are UUIDs; room DTOs use `roomId`, pl
 
 Binary frames relay raw bytes to active room peers. **No server-authenticated sender header exists**: applications must not treat an embedded player ID as authenticated. Binary traffic has the same rate, size and backpressure limits.
 
-### Replacement players in a running game
+### Rejoining a game with a fixed roster
 
-Starting with `{allowReplacement:true,...}` fixes the number of game seats to the number of active players at that moment. When a non-owner leaves or disconnects, the started room appears in the lobby again and any account may enter the vacancy; new accounts must supply the room password. A replacement cannot add seats beyond the original player count. Repeated departures free the seat again. Games that omit this flag retain the existing reservation-based reconnect behavior.
+Starting with `{fixedRoster:true,...}` reserves seats for the authenticated accounts active at that moment. A started room is visible only to those participants and only they may re-enter, including after explicit `leaveRoom`. Vacancies are never offered to other accounts, even if they know the room ID and password. Room notifications after departure are sent only to original participants; `getRooms` applies the same restriction. Reserved accounts do not expire while this game exists. Games that omit this flag retain the existing reservation-based reconnect behavior.
 
-In this mode the original owner is required for the game's lifetime: their departure deletes the room and releases the surviving players, without electing a replacement owner. Clients must handle the owner's `playerLeft`/`playerDisconnected` event by ending the game. The relay does not restore gameplay itself: the host assigns the vacant seat and transfers state using authenticated `sendTo` / `messageFromPlayer` messages. Clients decide when recovery is complete and gameplay can resume.
+In this mode the original owner is required for the game's lifetime: their departure deletes the room and releases the surviving players, without electing a new owner. Clients must handle the owner's `playerLeft`/`playerDisconnected` event by ending the game. If the same account authenticates before its old socket has timed out, the old game connection is removed first so the host can pause and restore the returning client on re-entry. The relay does not restore gameplay itself: the host transfers state to the original player using authenticated `sendTo` / `messageFromPlayer` messages. Clients decide when recovery is complete and gameplay can resume.
 
 ### Server events
 

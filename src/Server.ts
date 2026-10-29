@@ -482,7 +482,7 @@ export class Server {
     else room.reservations.delete(p.playerId);
     this.broadcast(room, { method: disconnected ? 'playerDisconnected' : 'playerLeft', data: p.playerId });
     // Reconnectable games keep their authoritative host. Losing it ends the match for everyone.
-    if (room.gameStarted && room.fixedRoster && room.ownerId === p.playerId) {
+    if (room.gameStarted && room.fixedRoster && !room.hostMigration && room.ownerId === p.playerId) {
       for (const member of this.members(room)) {
         member.roomId = null; member.roomEntryTimestamp = null; member.membershipVersion++;
       }
@@ -497,8 +497,10 @@ export class Server {
       const nextOwner = room.active.values().next().value;
       if (nextOwner !== undefined) {
         room.ownerId = nextOwner;
+        room.hostGeneration++;
         this.trace('room.owner_changed', { roomId: room.roomId, ownerId: nextOwner });
-        this.broadcast(room, { method: 'newRoomOwner', data: room.ownerId });
+        this.broadcast(room, { method: 'newRoomOwner', data: room.hostMigration
+          ? { playerId: room.ownerId, generation: room.hostGeneration } : room.ownerId });
       }
     }
     if (room.gameStarted && room.fixedRoster) {
@@ -599,6 +601,7 @@ export class Server {
           const json = this.prepareRelay(p, { method: 'gameStarted', data: d });
           if (json === null) return;
           room.fixedRoster = record.fixedRoster === true;
+          room.hostMigration = room.fixedRoster && record.hostMigration === true;
           if (room.fixedRoster) for (const id of room.active) room.gamePlayers.add(id);
           room.gameStarted = true; this.broadcastJson(room, json); this.lobby({ method: 'roomBlock', data: room.roomId });
           this.trace('room.game_started', { roomId: room.roomId, ownerId: p.playerId });

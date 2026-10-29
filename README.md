@@ -71,6 +71,8 @@ Starting with `{fixedRoster:true,...}` reserves seats for the authenticated acco
 
 In this mode the original owner is required for the game's lifetime: their departure deletes the room and releases the surviving players, without electing a new owner. Clients must handle the owner's `playerLeft`/`playerDisconnected` event by ending the game. If the same account authenticates before its old socket has timed out, the old game connection is removed first so the host can pause and restore the returning client on re-entry. The relay does not restore gameplay itself: the host transfers state to the original player using authenticated `sendTo` / `messageFromPlayer` messages. Clients decide when recovery is complete and gameplay can resume.
 
+Clients that implement host recovery can opt in with `startGame: {fixedRoster: true, hostMigration: true, ...}`. The server then elects the first remaining active participant when the owner leaves or disconnects, preserving the original roster and reconnect permissions. For these rooms, `newRoomOwner` carries `{playerId, generation}` instead of a string; the generation increases on each transfer, and room snapshots include `hostGeneration` (initially zero). Clients must fence old-generation messages and synchronize game state and pending commands before resuming. The server does not store game logic or commands. When the last active participant leaves, the room is still deleted. Omitting `hostMigration` preserves the original owner-loss behavior.
+
 ### Server events
 
 | Event | data |

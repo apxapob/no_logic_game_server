@@ -6,6 +6,8 @@ export class Room {
   gameStarted = false;
   joinClosed = false;
   fixedRoster = false;
+  hostMigration = false;
+  hostGeneration = 0;
   readonly gamePlayers = new Set<string>();
   canRejoin(playerId: string): boolean {
     return this.fixedRoster ? this.gamePlayers.has(playerId) : this.reservations.has(playerId);
@@ -16,6 +18,7 @@ export class Room {
   toNetObject(rtt: number | null = null) {
     return { roomId: this.roomId, ownerId: this.ownerId, name: this.roomName,
       players: [...this.active], maxPlayers: this.maxPlayers, hasPassword: this.password !== null,
-      gameData: this.gameData, gameStarted: this.gameStarted, joinClosed: this.joinClosed, rtt, metaData: this.roomMeta };
+      gameData: this.gameData, gameStarted: this.gameStarted, joinClosed: this.joinClosed, rtt, metaData: this.roomMeta,
+      ...(this.hostMigration ? { hostGeneration: this.hostGeneration } : {}) };
   }
 }

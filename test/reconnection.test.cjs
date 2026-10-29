@@ -69,6 +69,33 @@ test('replacing a still-open socket pauses the game before the same account re-e
   assert.equal((await host.wait('playerEnter')).data.playerId, peer.account.playerId);
 });
 
+test('opt-in host migration preserves the roster, advances generations and permits the former host to rejoin', async t => {
+  const { server, url } = await startServer(t);
+  const host = await connect(t, url);
+  const peer = await connect(t, url);
+  const third = await connect(t, url);
+  const outsider = await connect(t, url);
+  const room = await createRoom(host, { maxPlayers: 4 });
+  await enterRoom(peer, room);
+  await enterRoom(third, room);
+  host.send('startGame', { fixedRoster: true, hostMigration: true });
+  await peer.wait('gameStarted');
+  await host.close();
+  assert.deepEqual((await peer.wait('newRoomOwner')).data, { playerId: peer.account.playerId, generation: 1 });
+  assert.equal(server.stats().rooms, 1);
+  await expectError(outsider, 'enterRoom', { roomId: room.roomId }, 'game_started_without_you');
+  const resumed = await connect(t, url, host.account);
+  const restored = await enterRoom(resumed, room);
+  assert.equal(restored.ownerId, peer.account.playerId);
+  assert.equal(restored.hostGeneration, 1);
+  peer.send('leaveRoom');
+  assert.deepEqual((await resumed.wait('newRoomOwner')).data, { playerId: third.account.playerId, generation: 2 });
+  resumed.send('leaveRoom');
+  third.send('leaveRoom');
+  await third.barrier();
+  assert.equal(server.stats().rooms, 0);
+});
+
 test('a reserved participant account does not expire while its game is waiting', async t => {
   const { url } = await startServer(t, { accountTtlMs: 50 });
   const host = await connect(t, url);

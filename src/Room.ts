@@ -4,6 +4,9 @@ export class Room {
   readonly active = new Set<string>();
   readonly reservations = new Set<string>();
   gameStarted = false;
+  allowReplacement = false;
+  gamePlayersCount = 0;
+  get hasVacancy(): boolean { return this.gameStarted && this.allowReplacement && this.active.size < this.gamePlayersCount; }
   roomMeta: unknown = null;
   constructor(public roomName: string, public ownerId: string, public maxPlayers: number,
     public password: string | null, public gameData: unknown) {}

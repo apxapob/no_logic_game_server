@@ -436,7 +436,7 @@ export class Server {
   }
   private roomPage(p: Player, after?: string): void {
     const rooms = [...this.rooms.values()]
-      .filter(r => (!after || r.roomId > after) && (!r.gameStarted || r.active.has(p.playerId) || r.reservations.has(p.playerId)))
+      .filter(r => (!after || r.roomId > after) && (!r.gameStarted || r.hasVacancy || r.active.has(p.playerId) || r.reservations.has(p.playerId)))
       .sort((a, b) => a.roomId < b.roomId ? -1 : a.roomId > b.roomId ? 1 : 0);
     const data: ReturnType<Server['roomDto']>[] = [];
     let nextCursor: string | null = null;
@@ -455,14 +455,20 @@ export class Server {
     if (p.roomId) { this.playerError(p, p.roomId === id ? 'already_in_room' : 'in_other_room'); return; }
     const room = this.rooms.get(id);
     if (!room) { this.playerError(p, 'no_room'); return; }
-    if (room.gameStarted && !room.reservations.has(p.playerId)) { this.playerError(p, 'game_started_without_you'); return; }
-    if (!room.gameStarted && (password ?? null) !== room.password) { this.playerError(p, 'wrong_password'); return; }
+    if (room.gameStarted && !(room.allowReplacement ? room.hasVacancy : room.reservations.has(p.playerId))) {
+      this.playerError(p, 'game_started_without_you'); return;
+    }
+    if ((!room.gameStarted || (room.allowReplacement && !room.reservations.has(p.playerId)))
+      && (password ?? null) !== room.password) { this.playerError(p, 'wrong_password'); return; }
     if (room.active.size >= room.maxPlayers) { this.playerError(p, 'full_room'); return; }
     p.roomId = id; p.roomEntryTimestamp = Date.now(); p.membershipVersion++;
     room.active.add(p.playerId); room.reservations.delete(p.playerId);
     this.trace('room.entered', { roomId: room.roomId, playerId: p.playerId });
     this.broadcast(room, { method: 'playerEnter', data: p.toNetObject() }, p.playerId);
     this.send(p, { method: 'onRoomEnter', data: this.roomDto(room) });
+    if (room.allowReplacement) this.lobby(room.hasVacancy
+      ? { method: 'roomCreated', data: this.roomDto(room) }
+      : { method: 'roomBlock', data: room.roomId });
   }
   private leave(p: Player, disconnected: boolean): void {
     const room = this.activeRoom(p);
@@ -474,6 +480,13 @@ export class Server {
     if (disconnected && room.gameStarted) room.reservations.add(p.playerId);
     else room.reservations.delete(p.playerId);
     this.broadcast(room, { method: disconnected ? 'playerDisconnected' : 'playerLeft', data: p.playerId });
+    // Reconnectable games keep their authoritative host. Losing it ends the match for everyone.
+    if (room.gameStarted && room.allowReplacement && room.ownerId === p.playerId) {
+      for (const member of this.members(room)) {
+        member.roomId = null; member.roomEntryTimestamp = null; member.membershipVersion++;
+      }
+      room.active.clear();
+    }
     if (room.active.size === 0) {
       room.reservations.clear(); this.rooms.delete(room.roomId);
       this.trace('room.deleted', { roomId: room.roomId });
@@ -487,6 +500,7 @@ export class Server {
         this.broadcast(room, { method: 'newRoomOwner', data: room.ownerId });
       }
     }
+    if (room.hasVacancy) this.lobby({ method: 'roomCreated', data: this.roomDto(room) });
   }
   private handle(p: Player, message: ProtocolMessage, c: Connection): void {
     const d = message.data;
@@ -576,6 +590,8 @@ export class Server {
           if (room.gameStarted) { this.playerError(p, 'already_started'); return; }
           const json = this.prepareRelay(p, { method: 'gameStarted', data: d });
           if (json === null) return;
+          room.allowReplacement = record.allowReplacement === true;
+          room.gamePlayersCount = room.active.size;
           room.gameStarted = true; this.broadcastJson(room, json); this.lobby({ method: 'roomBlock', data: room.roomId });
           this.trace('room.game_started', { roomId: room.roomId, ownerId: p.playerId });
         } else if (message.method === 'shareGameState') {

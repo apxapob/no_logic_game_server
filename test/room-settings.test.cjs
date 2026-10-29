@@ -131,3 +131,26 @@ test('a longer room name cannot exceed reserved DTO capacity or partially change
   assert.equal(unchanged.name, 'A');
   assert.equal(unchanged.hasPassword, false);
 });
+
+
+test('owner can close entry and reopen it without changing room membership or password', async t => {
+  const { url } = await startServer(t);
+  const owner = await connect(t, url);
+  const peer = await connect(t, url);
+  const outsider = await connect(t, url);
+  const room = await createRoom(owner, { password: 'secret' });
+  await enterRoom(peer, room, 'secret');
+  await expectError(peer, 'updateRoom', { joinClosed: true }, 'not_room_owner');
+  owner.send('updateRoom', { joinClosed: true });
+  const closed = (await owner.wait('roomUpdated')).data;
+  assert.equal(closed.joinClosed, true);
+  assert.equal(closed.hasPassword, true);
+  assert.equal(closed.players.length, 2);
+  await expectError(outsider, 'enterRoom', { roomId: room.roomId, password: 'secret' }, 'room_closed');
+  peer.send('leaveRoom');
+  await owner.wait('playerLeft');
+  await expectError(outsider, 'enterRoom', { roomId: room.roomId, password: 'secret' }, 'room_closed');
+  owner.send('updateRoom', { joinClosed: false });
+  await owner.wait('roomUpdated', data => data.joinClosed === false);
+  await enterRoom(outsider, room, 'secret');
+});

@@ -459,6 +459,7 @@ export class Server {
     if (p.roomId) { this.playerError(p, p.roomId === id ? 'already_in_room' : 'in_other_room'); return; }
     const room = this.rooms.get(id);
     if (!room) { this.playerError(p, 'no_room'); return; }
+    if (!room.gameStarted && room.joinClosed) { this.playerError(p, 'room_closed'); return; }
     if (room.gameStarted && !room.canRejoin(p.playerId)) {
       this.playerError(p, 'game_started_without_you'); return;
     }
@@ -569,6 +570,7 @@ export class Server {
           this.playerError(p, 'payload_too_large'); return;
         }
         room.maxPlayers = maxPlayers;
+        if (typeof record.joinClosed === 'boolean') room.joinClosed = record.joinClosed;
         room.password = password;
         room.roomName = name;
         const updated = { method: 'roomUpdated', data: this.roomDto(room) };

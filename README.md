@@ -247,3 +247,65 @@ close it after stopping the server. CLI file settings are applied by `npm start`
 Read a live file with `tail -f /var/log/no-logic-game-server/server-*.jsonl`
 (restart tail after rotation to follow newly created files), or inspect a specific
 connection with `jq 'select(.connectionId == "CONNECTION_ID")' server-*.jsonl`.
+
+## Analytics and error reports
+
+The CLI can send privacy-limited HTTPS telemetry to the shared `project-telemetry`
+service. It is disabled when the URL/key are absent. Set the explicit kill switch
+to `false` to disable it regardless of any other telemetry configuration:
+
+```text
+TELEMETRY_ENABLED=false
+TELEMETRY_URL=https://telemetry.example.com/v1/events
+TELEMETRY_PROJECT=no-logic
+TELEMETRY_WRITE_KEY=<dedicated-server-project-key>
+TELEMETRY_RELEASE=1.0.0
+TELEMETRY_INTERVAL_MS=60000
+TELEMETRY_TIMEOUT_MS=5000
+```
+
+To enable, configure your receiver URL/key and set `TELEMETRY_ENABLED=true`.
+This flag accepts only `true` or `false`; `true` requires both URL and key. If the
+flag is absent, providing both enables telemetry. Explicit `false` discards all
+unused telemetry settings, including invalid stale URLs/keys, so they cannot block
+server startup and no telemetry requests are made. Use a separate project/key
+from the public game client. The URL requires HTTPS
+without credentials, query parameters or fragments. Interval is 1 second–1 hour;
+request timeout is 100 ms–30 seconds. The write key is 24–128 URL-safe characters
+(letters, digits, underscores and hyphens); project ID uses lowercase letters,
+digits, underscores and hyphens (1–64 characters), release at most 64 characters.
+Malformed settings fail startup. The endpoint must accept `POST` JSON
+`{project, events}` and `Authorization: Bearer ...`; batches contain at most
+32 events and 64 KiB.
+
+Events include process start/stop; minute-level counts of connections,
+disconnections, room creation/deletion, game starts, authentication/protocol
+failures and rejected/limited traffic; current accounts, online players, rooms,
+pending connections, RSS/heap memory and uptime. A random process-session UUID
+changes after restart. No player names/IDs, IP addresses, room IDs, chats,
+credentials, gameplay or serialized payloads are sent, even in verbose-log mode.
+Internal errors include a fixed category and exception class plus file basenames
+and line numbers; arbitrary exception messages, directory paths and URLs are
+excluded. Local verbose logs keep their existing separate policy.
+
+The queue is memory-only, capped at 256 events/512 KiB (plus one in-flight batch).
+Old queued events are dropped on overflow; `telemetryDropped` exposes that loss.
+Failures use exponential retry backoff up to five minutes; retries preserve event
+IDs. Invalid/authentication-rejected batches are dropped. Error categories are
+coalesced for one minute. Shutdown flushes for at most one second. A fatal-exception
+monitor preserves Node's original crash behavior; fatal delivery is best effort
+and is not guaranteed before process exit. Telemetry is diagnostic, not a lossless
+audit log. The relay does not wait for telemetry while serving gameplay.
+
+For an embedded server, construct `Telemetry(telemetryFromEnv())`, pass
+`telemetry: (event, details) => telemetry.observe(event, details)` to `Server`, call
+`telemetry.start(() => server.stats())` after startup and `await telemetry.close()`
+after stopping. Diagnostic observer exceptions are isolated from the server. Raw
+diagnostic callback details can contain identifiers; only the provided
+`Telemetry` adapter's allowlist is safe to transmit. The existing logger is
+independent and retains its previous behavior.
+
+The receiving service controls retention, disk quota, report scheduling and SMTP
+or webhook delivery. Configure the recipient (for example `reports@example.com`) on
+that service, not in game or relay binaries. See [deployment](docs/deployment.md#shared-domain-telemetry)
+for adding `/telemetry/` alongside the existing WebSocket service.

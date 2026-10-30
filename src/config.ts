@@ -7,6 +7,7 @@ export interface ServerOptions {
   authTimeoutMs?: number; maintenanceIntervalMs?: number; shutdownTimeoutMs?: number;
   allowedOrigins?: string[]; allowNoOrigin?: boolean; logger?: (text: string) => void;
   verboseLogs?: boolean; logDirectory?: string; logMaxBytes?: number; logFileMaxBytes?: number;
+  telemetry?: (event: string, details: Readonly<Record<string, unknown>>) => void;
 }
 export type ResolvedOptions = Required<ServerOptions>;
 export const defaults: ResolvedOptions = {
@@ -19,6 +20,7 @@ export const defaults: ResolvedOptions = {
   allowedOrigins: ['http://127.0.0.1:8081', 'http://localhost:8081'],
   allowNoOrigin: true, logger: () => undefined,
   verboseLogs: false, logDirectory: './logs', logMaxBytes: 1024 ** 3, logFileMaxBytes: 16 * 1024 ** 2,
+  telemetry: () => undefined,
 };
 export const numericKeys = [
   'port', 'sendDelayMs', 'maxPayloadBytes', 'maxBufferedBytes', 'maxConnections',
@@ -41,7 +43,7 @@ export function resolveOptions(options: ServerOptions = {}): ResolvedOptions {
   if (typeof result.host !== 'string' || !result.host.trim() ||
       typeof result.devMode !== 'boolean' || typeof result.allowNoOrigin !== 'boolean' ||
       typeof result.verboseLogs !== 'boolean' || typeof result.logDirectory !== 'string' || !result.logDirectory.trim() ||
-      typeof result.logger !== 'function' || !Array.isArray(result.allowedOrigins) ||
+      typeof result.logger !== 'function' || typeof result.telemetry !== 'function' || !Array.isArray(result.allowedOrigins) ||
       result.allowedOrigins.some(origin => typeof origin !== 'string' || !/^https?:\/\/[^\s/?#]+$/.test(origin))) {
     throw new TypeError('Invalid server options');
   }

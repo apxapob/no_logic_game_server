@@ -36,10 +36,12 @@ export class Server {
   private cancelStartup: (() => void) | null = null;
   constructor(options: ServerOptions = {}) { this.options = resolveOptions(options); }
   private log(text: string): void {
+    try { this.options.telemetry(text, {}); } catch { /* Diagnostics cannot affect lifecycle. */ }
     try { this.options.logger(this.options.verboseLogs ? JSON.stringify({ time: new Date().toISOString(), event: text }) : text); }
     catch { /* Logging must not affect lifecycle. */ }
   }
   private trace(event: string, details: Record<string, unknown> = {}, c?: Connection): void {
+    try { this.options.telemetry(event, details); } catch { /* Diagnostics cannot affect protocol handling. */ }
     if (!this.options.verboseLogs) return;
     try {
       this.options.logger(JSON.stringify({ time: new Date().toISOString(), event,

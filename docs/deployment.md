@@ -40,3 +40,52 @@ is acceptable. The CLI writes detailed events into that directory and rotates th
 automatically; do not run a second external rotator on the same files. Existing
 nginx/systemd logs have their own retention policies. Set `VERBOSE_LOGS=false` and
 restart to return to minimal console logging; existing diagnostic files remain.
+
+## Shared-domain telemetry
+
+Keep the existing `wss://game.example.com/` relay and `/healthz` routes. Run the new
+telemetry service separately on `127.0.0.1:8787`, and add the `/telemetry/` prefix
+to the existing TLS virtual host; strip the prefix before proxying. Do not start a
+second public proxy on ports 80/443. Neither telemetry deployment nor reloads of
+its service require restarting the relay. A relay update itself disconnects rooms;
+check `/healthz` and schedule a restart when rooms/players are absent.
+
+For **nginx**, add this location inside the existing HTTPS server block:
+
+```nginx
+location ^~ /telemetry/ {
+    proxy_pass http://127.0.0.1:8787/;
+    proxy_http_version 1.1;
+    client_max_body_size 64k;
+    proxy_connect_timeout 3s;
+    proxy_read_timeout 10s;
+    proxy_send_timeout 10s;
+    access_log off;
+}
+```
+
+The trailing `/` on `proxy_pass` strips `/telemetry/`. Existing WebSocket upgrade
+settings remain in the existing `/` route. Validate with `nginx -t` before reloading.
+For **Caddy**, add this route inside the existing domain block instead:
+
+```caddyfile
+handle_path /telemetry/* {
+    reverse_proxy 127.0.0.1:8787
+}
+```
+
+Validate the complete existing Caddyfile before reloading. Keep the ingest port
+private and let the receiver authenticate the separate `no-logic` project key.
+Set `TELEMETRY_ENABLED=true`, `TELEMETRY_URL=https://game.example.com/telemetry/v1/events`, `TELEMETRY_PROJECT=no-logic`
+and the generated server write key in a root-owned environment file used by the
+relay service (for example via systemd `EnvironmentFile=`). Do not put keys into
+Git or command history. The user-selected SMTP recipient and scheduling belong in
+the telemetry service configuration and can change without rebuilding clients.
+To disable transmission without deleting the configured endpoint/key, set
+`TELEMETRY_ENABLED=false` and restart the relay at an appropriate time. With this
+explicit kill switch, unused malformed telemetry settings are ignored too.
+
+Verify both `/healthz` and `/telemetry/healthz`, a test event for each configured
+project, rejected wrong keys, and WebSocket connection/authentication after the
+proxy reload. Missing SMTP credentials must not prevent ingest or bounded local
+report generation; only enable SMTP delivery once the provider is configured.

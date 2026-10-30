@@ -1,4 +1,6 @@
+import type { PushSender } from './Push';
 export interface ServerOptions {
+  pushSender?: PushSender | null;
   host?: string; port?: number; devMode?: boolean; sendDelayMs?: number;
   maxPayloadBytes?: number; maxBufferedBytes?: number; maxConnections?: number;
   maxConnectionsPerIp?: number; maxAccounts?: number; maxRooms?: number;
@@ -11,6 +13,7 @@ export interface ServerOptions {
 }
 export type ResolvedOptions = Required<ServerOptions>;
 export const defaults: ResolvedOptions = {
+  pushSender: null,
   host: '127.0.0.1', port: 8080, devMode: false, sendDelayMs: 0,
   maxPayloadBytes: 65536, maxBufferedBytes: 262144, maxConnections: 256,
   maxConnectionsPerIp: 32, maxAccounts: 1024, maxRooms: 128, maxRoomPlayers: 16,
@@ -40,7 +43,7 @@ export function resolveOptions(options: ServerOptions = {}): ResolvedOptions {
       throw new TypeError(`Invalid option: ${key}`);
     }
   }
-  if (typeof result.host !== 'string' || !result.host.trim() ||
+  if ((result.pushSender !== null && typeof result.pushSender !== 'function') || typeof result.host !== 'string' || !result.host.trim() ||
       typeof result.devMode !== 'boolean' || typeof result.allowNoOrigin !== 'boolean' ||
       typeof result.verboseLogs !== 'boolean' || typeof result.logDirectory !== 'string' || !result.logDirectory.trim() ||
       typeof result.logger !== 'function' || typeof result.telemetry !== 'function' || !Array.isArray(result.allowedOrigins) ||

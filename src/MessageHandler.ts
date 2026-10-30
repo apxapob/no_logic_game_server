@@ -5,6 +5,13 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export const isUuid = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 const name = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0 && value.length <= 64;
 const password = (value: unknown): boolean => value === undefined || value === null || (typeof value === 'string' && value.length <= 128);
+const language = (value: unknown): value is string => typeof value === 'string' && /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$/.test(value);
+function translations(value: unknown): boolean {
+  return value === undefined || (isRecord(value) && Object.keys(value).length <= 20 &&
+    Object.entries(value).every(([key, text]) => language(key) && isRecord(text) &&
+      typeof text.title === 'string' && text.title.trim().length > 0 && text.title.length <= 100 &&
+      typeof text.body === 'string' && text.body.trim().length > 0 && text.body.length <= 500));
+}
 function boundedJson(value: unknown, depth = 0): boolean {
   if (depth > 32) return false;
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
@@ -22,6 +29,15 @@ export function validateMessage(value: unknown, maxRoomPlayers: number, maxAccou
     case 'authenticate': return isRecord(d) && (d.name === undefined || name(d.name)) &&
       (d.playerId === undefined || isUuid(d.playerId)) && (d.password === undefined || (typeof d.password === 'string' && password(d.password)));
     case 'Pong': return typeof d === 'number' && Number.isFinite(d);
+    case 'setPushDevice': return isRecord(d) && isUuid(d.deviceId) &&
+      (d.language === undefined || language(d.language)) &&
+      typeof d.foreground === 'boolean' && (d.token === null ||
+        (typeof d.token === 'string' && /^[A-Za-z0-9_:\-]{20,4096}$/.test(d.token)));
+    case 'notifyPlayers': return isRecord(d) && ids(d.to) && (d.to as unknown[]).length > 0 &&
+      typeof d.eventId === 'string' && /^[A-Za-z0-9_.:\-]{1,128}$/.test(d.eventId) &&
+      typeof d.title === 'string' && d.title.trim().length > 0 && d.title.length <= 100 &&
+      typeof d.body === 'string' && d.body.trim().length > 0 && d.body.length <= 500 &&
+      translations(d.translations);
     case 'getRooms': return d === undefined || d === null || (isRecord(d) && (d.after === undefined || isUuid(d.after)));
     case 'leaveRoom': case 'requestGameState': return d === undefined || d === null;
     case 'getPlayers': return d === undefined || d === null || ids(d);

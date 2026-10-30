@@ -10,6 +10,7 @@ export class Player {
   rtt: number | null = null;
   offlineSince: number | null = null;
   membershipVersion = 0;
+  readonly pushDevices = new Map<string, { token: string; foreground: boolean; language: string }>();
   constructor(public playerName: string) {}
   toNetObject() {
     return { playerId: this.playerId, name: this.playerName, rtt: this.rtt, roomEntryTimestamp: this.roomEntryTimestamp };

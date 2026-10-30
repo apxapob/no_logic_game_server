@@ -10,6 +10,8 @@ export class Room {
   hostGeneration = 0;
   binaryRelay = false;
   readonly gamePlayers = new Set<string>();
+  readonly pushEvents = new Set<string>();
+  lastPushAt = 0;
   canRejoin(playerId: string): boolean {
     return this.fixedRoster ? this.gamePlayers.has(playerId) : this.reservations.has(playerId);
   }

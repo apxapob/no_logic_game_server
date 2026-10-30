@@ -2,6 +2,7 @@ import { Server } from './Server';
 import { configFromEnv, resolveOptions } from './config';
 import { RotatingFileLogger } from './Logging';
 import { Telemetry, telemetryFromEnv } from './Telemetry';
+import { createPushSender } from './Push';
 export { Server } from './Server';
 export { configFromEnv } from './config';
 export { RotatingFileLogger } from './Logging';
@@ -15,6 +16,7 @@ export async function main(): Promise<void> {
     onError: () => console.error('File logging failed; detailed logging disabled. Check disk space and permissions.'),
   }) : null;
   const server = new Server({ ...options,
+    pushSender: process.env.FCM_ENABLED === 'true' ? createPushSender() : null,
     telemetry: (event, details) => telemetry.observe(event, details),
     logger: text => { if (files) files.write(text); else console.log(text); },
   });

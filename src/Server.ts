@@ -17,7 +17,7 @@ interface Connection {
 }
 interface Attempts { since: number; count: number }
 interface Transport { id: string; created: number; websocket: boolean; ip: string }
-const roomIndependentMethods = new Set(['getRooms', 'getPlayers', 'changeName', 'createRoom', 'enterRoom', 'leaveRoom']);
+const roomIndependentMethods = new Set(['getRooms', 'getPlayers', 'changeName', 'createRoom', 'enterRoom', 'leaveRoom', 'setPushDevice']);
 export class Server {
   readonly options: ResolvedOptions;
   private readonly players = new Map<string, Player>();
@@ -33,6 +33,7 @@ export class Server {
   private startPromise: Promise<void> | null = null;
   private stopPromise: Promise<void> | null = null;
   private readonly startupAbort = new AbortController();
+  private pushesInFlight = 0;
   private cancelStartup: (() => void) | null = null;
   constructor(options: ServerOptions = {}) { this.options = resolveOptions(options); }
   private log(text: string): void {
@@ -364,7 +365,8 @@ export class Server {
     c.player = p; this.online.add(p);
     this.trace('authentication.succeeded', { created }, c);
     if (created) this.sendConnection(c, { method: 'accountCreated', data: { name: p.playerName, playerId: p.playerId, password: p.password } });
-    this.sendConnection(c, { method: 'onConnected', data: { online: this.online.size } });
+    this.sendConnection(c, { method: 'onConnected', data: { online: this.online.size,
+      ...(this.options.pushSender ? { pushNotifications: true } : {}) } });
     // Session replacement retains actual membership and its original entry timestamp.
     const activeRoom = this.activeRoom(p);
     if (activeRoom) this.sendConnection(c, { method: 'onRoomEnter', data: this.roomDto(activeRoom) });
@@ -548,6 +550,24 @@ export class Server {
         });
         this.send(p, { method: 'onGetPlayers', data: dto }); return;
       }
+      case 'setPushDevice': {
+        if (!this.options.pushSender) { this.playerError(p, 'push_unavailable'); return; }
+        const deviceId = record.deviceId as string;
+        const token = record.token as string | null;
+        if (token === null) p.pushDevices.delete(deviceId);
+        else {
+          // A refreshed login owns this installation; no duplicate delivery to old accounts.
+          for (const account of this.players.values()) {
+            for (const [id, device] of account.pushDevices) {
+              if (device.token === token && (account !== p || id !== deviceId)) account.pushDevices.delete(id);
+            }
+          }
+          if (!p.pushDevices.has(deviceId) && p.pushDevices.size >= 4) p.pushDevices.delete(p.pushDevices.keys().next().value!);
+          p.pushDevices.set(deviceId, { token, foreground: record.foreground === true,
+            language: typeof record.language === 'string' ? record.language : 'en' });
+        }
+        this.send(p, { method: 'pushDeviceUpdated' }); return;
+      }
       case 'changeName': {
         if (typeof d === 'string') p.playerName = d;
         const room = this.activeRoom(p);
@@ -572,6 +592,38 @@ export class Server {
     if (!room) { this.playerError(p, 'no_room'); return; }
     const targets = Array.isArray(record.to) ? new Set(record.to.filter((id): id is string => typeof id === 'string')) : undefined;
     switch (message.method) {
+      case 'notifyPlayers': {
+        if (!this.options.pushSender) { this.playerError(p, 'push_unavailable'); return; }
+        if (room.ownerId !== p.playerId) { this.playerError(p, 'not_room_owner'); return; }
+        if (!room.gameStarted || !room.fixedRoster || !targets ||
+          [...targets].some(id => !room.gamePlayers.has(id))) { this.playerError(p, 'invalid_message'); return; }
+        const eventId = record.eventId as string;
+        if (room.pushEvents.has(eventId)) return;
+        const now = Date.now();
+        if (now - room.lastPushAt < 30000 || this.pushesInFlight >= 32) { this.playerError(p, 'push_rate_limited'); return; }
+        room.lastPushAt = now;
+        room.pushEvents.add(eventId);
+        if (room.pushEvents.size > 128) room.pushEvents.delete(room.pushEvents.values().next().value!);
+        const texts = isRecord(record.translations) ? record.translations : {};
+        for (const id of targets) {
+          if (id === p.playerId) continue;
+          const target = this.players.get(id);
+          if (!target) continue;
+          for (const [deviceId, device] of target.pushDevices) {
+            if ((target.ws?.readyState === WebSocket.OPEN && device.foreground) || this.pushesInFlight >= 32) continue;
+            const candidate = Object.hasOwn(texts, device.language) ? texts[device.language] : null;
+            const localized = isRecord(candidate) ? candidate : null;
+            const notification = { title: (localized?.title ?? record.title) as string,
+              body: (localized?.body ?? record.body) as string, roomId: room.roomId, eventId };
+            this.pushesInFlight++;
+            void Promise.resolve().then(() => this.options.pushSender!(device.token, notification)).then(result => {
+              if (result === 'invalid' && target.pushDevices.get(deviceId) === device) target.pushDevices.delete(deviceId);
+              this.trace('push.delivery', { result });
+            }).catch(() => this.trace('push.delivery_failed')).finally(() => { this.pushesInFlight--; });
+          }
+        }
+        return;
+      }
       case 'updateRoom': {
         if (room.ownerId !== p.playerId) { this.playerError(p, 'not_room_owner'); return; }
         if (room.gameStarted) { this.playerError(p, 'already_started'); return; }

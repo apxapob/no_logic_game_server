@@ -309,3 +309,8 @@ The receiving service controls retention, disk quota, report scheduling and SMTP
 or webhook delivery. Configure the recipient (for example `reports@example.com`) on
 that service, not in game or relay binaries. See [deployment](docs/deployment.md#shared-domain-telemetry)
 for adding `/telemetry/` alongside the existing WebSocket service.
+
+## Optional Android push notifications
+
+See [push delivery](docs/push.md) for Firebase credentials, device registration,
+owner-authorized room notifications, limits and the current in-memory lifetime.

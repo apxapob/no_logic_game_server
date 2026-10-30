@@ -7,6 +7,7 @@ import { Player, WSMessage } from './Player';
 import { Room } from './Room';
 import { isRecord, ProtocolMessage, validateMessage } from './MessageHandler';
 import { redact } from './Logging';
+import { binaryFrom, binaryTarget } from './BinaryRelay';
 export type { ServerOptions } from './config';
 interface Connection {
   id: string; ip: string;
@@ -277,7 +278,16 @@ export class Server {
       const p = c.player;
       this.schedule(c, bytes.length, () => {
         const room = this.activeRoom(p);
-        if (room) for (const peer of this.members(room)) if (peer !== p) this.sendBytes(peer, bytes, true);
+        if (!room) return;
+        if (room.binaryRelay) {
+          const target = binaryTarget(bytes);
+          if (target === undefined) { this.error(c, 'invalid_message'); return; }
+          const relayed = binaryFrom(bytes, p.playerId);
+          for (const peer of this.members(room))
+            if (peer !== p && (target === null || peer.playerId === target)) this.sendBytes(peer, relayed, true);
+        } else {
+          for (const peer of this.members(room)) if (peer !== p) this.sendBytes(peer, bytes, true);
+        }
       });
       return;
     }
@@ -548,6 +558,7 @@ export class Server {
         if (this.rooms.size >= this.options.maxRooms) { this.playerError(p, 'limit_exceeded'); return; }
         if (typeof record.name !== 'string' || typeof record.maxPlayers !== 'number') return;
         const room = new Room(record.name, p.playerId, record.maxPlayers, typeof record.password === 'string' ? record.password : null, record.gameData ?? null);
+        room.binaryRelay = record.binaryRelay === true;
         if (!this.roomFits(room)) { this.playerError(p, 'payload_too_large'); return; }
         this.rooms.set(room.roomId, room);
         this.trace('room.created', { roomId: room.roomId, ownerId: p.playerId });

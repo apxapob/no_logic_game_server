@@ -8,6 +8,7 @@ export class Room {
   fixedRoster = false;
   hostMigration = false;
   hostGeneration = 0;
+  binaryRelay = false;
   readonly gamePlayers = new Set<string>();
   canRejoin(playerId: string): boolean {
     return this.fixedRoster ? this.gamePlayers.has(playerId) : this.reservations.has(playerId);
@@ -19,6 +20,7 @@ export class Room {
     return { roomId: this.roomId, ownerId: this.ownerId, name: this.roomName,
       players: [...this.active], maxPlayers: this.maxPlayers, hasPassword: this.password !== null,
       gameData: this.gameData, gameStarted: this.gameStarted, joinClosed: this.joinClosed, rtt, metaData: this.roomMeta,
-      ...(this.hostMigration ? { hostGeneration: this.hostGeneration } : {}) };
+      ...(this.hostMigration ? { hostGeneration: this.hostGeneration } : {}),
+      ...(this.binaryRelay ? { binaryRelay: true } : {}) };
   }
 }

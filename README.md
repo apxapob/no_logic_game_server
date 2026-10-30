@@ -63,7 +63,19 @@ Text frames are JSON `{method, data}`. IDs are UUIDs; room DTOs use `roomId`, pl
 | setRoomMeta | JSON metadata; owner only |
 | Pong | exact numeric timestamp received in Ping |
 
-Binary frames relay raw bytes to active room peers. **No server-authenticated sender header exists**: applications must not treat an embedded player ID as authenticated. Binary traffic has the same rate, size and backpressure limits.
+By default, binary frames relay raw bytes to active room peers. **This legacy mode has no server-authenticated sender header**: applications must not treat an embedded player ID as authenticated.
+
+Rooms created with `binaryRelay: true` use authenticated binary routing v1 instead. The room DTO confirms `binaryRelay: true`; clients must check it before using this format. This setting is fixed for the room's lifetime. A frame contains a 17-byte routing header followed by at least one opaque payload byte:
+
+| Offset | Client to server | Server to client |
+| --- | --- | --- |
+| 0 | Version `1` | Version `1` |
+| 1..16 | Target UUID as 16 binary bytes, or 16 zero bytes to broadcast | Authenticated sender UUID as 16 binary bytes |
+| 17.. | Application payload | Identical application payload |
+
+UUID bytes follow the hexadecimal pairs in canonical text order (network byte order, without GUID field swaps). For example, `00112233-4455-4677-8899-aabbccddeeff` becomes `00 11 22 33 44 55 46 77 88 99 aa bb cc dd ee ff`.
+
+Only active peers in the same room receive frames; the sender is excluded. Invalid headers return `invalid_message`. Delayed frames retain the existing session/membership fencing. The server neither parses nor decompresses the payload, so applications can compress once and reuse the bytes for multiple recipients. Clients must bound decompression and validate their own protocol, room, match and host generation. Both binary modes retain the same rate, size and backpressure limits. WebSocket `permessage-deflate` remains disabled to avoid server compression work.
 
 ### Rejoining a game with a fixed roster
 

@@ -28,7 +28,7 @@ export function validateMessage(value: unknown, maxRoomPlayers: number, maxAccou
     case 'changeName': return name(d);
     case 'sendChatMsg': return typeof d === 'string' && d.length <= 2048;
     case 'enterRoom': return isRecord(d) && isUuid(d.roomId) && password(d.password);
-    case 'createRoom': return isRecord(d) && name(d.name) && Number.isInteger(d.maxPlayers) &&
+    case 'createRoom': return isRecord(d) && (d.binaryRelay === undefined || typeof d.binaryRelay === 'boolean') && name(d.name) && Number.isInteger(d.maxPlayers) &&
       typeof d.maxPlayers === 'number' && d.maxPlayers >= 1 && d.maxPlayers <= maxRoomPlayers && password(d.password);
     case 'updateRoom': return isRecord(d) && (Object.hasOwn(d, 'name') || Object.hasOwn(d, 'maxPlayers') || Object.hasOwn(d, 'password') || Object.hasOwn(d, 'joinClosed')) &&
       (d.joinClosed === undefined || typeof d.joinClosed === 'boolean') &&

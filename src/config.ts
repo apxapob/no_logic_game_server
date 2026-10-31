@@ -1,5 +1,6 @@
 import type { PushSender } from './Push';
 export interface ServerOptions {
+  sessionDirectory?: string; sessionMaxBytes?: number; maxSessionBytes?: number;
   pushSender?: PushSender | null;
   host?: string; port?: number; devMode?: boolean; sendDelayMs?: number;
   maxPayloadBytes?: number; maxBufferedBytes?: number; maxConnections?: number;
@@ -13,6 +14,7 @@ export interface ServerOptions {
 }
 export type ResolvedOptions = Required<ServerOptions>;
 export const defaults: ResolvedOptions = {
+  sessionDirectory: '', sessionMaxBytes: 1024 ** 3, maxSessionBytes: 16 * 1024 ** 2,
   pushSender: null,
   host: '127.0.0.1', port: 8080, devMode: false, sendDelayMs: 0,
   maxPayloadBytes: 65536, maxBufferedBytes: 262144, maxConnections: 256,
@@ -32,19 +34,21 @@ export const numericKeys = [
   'heartbeatIntervalMs', 'idleTimeoutMs', 'authTimeoutMs', 'maintenanceIntervalMs',
   'shutdownTimeoutMs',
   'logMaxBytes', 'logFileMaxBytes',
+  'sessionMaxBytes', 'maxSessionBytes',
 ] as const;
 export function resolveOptions(options: ServerOptions = {}): ResolvedOptions {
   const result = { ...defaults, ...options, allowedOrigins: [...(options.allowedOrigins ?? defaults.allowedOrigins)] };
   for (const key of numericKeys) {
     const value = result[key];
     const minimum = key === 'port' || key === 'sendDelayMs' ? 0 : 1;
-    const maximum = key === 'port' ? 65535 : key === 'logMaxBytes' || key === 'logFileMaxBytes' ? Number.MAX_SAFE_INTEGER : 2147483647;
+    const maximum = key === 'port' ? 65535 : key === 'logMaxBytes' || key === 'logFileMaxBytes' || key === 'sessionMaxBytes' ? Number.MAX_SAFE_INTEGER : 2147483647;
     if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
       throw new TypeError(`Invalid option: ${key}`);
     }
   }
   if ((result.pushSender !== null && typeof result.pushSender !== 'function') || typeof result.host !== 'string' || !result.host.trim() ||
       typeof result.devMode !== 'boolean' || typeof result.allowNoOrigin !== 'boolean' ||
+      typeof result.sessionDirectory !== 'string' ||
       typeof result.verboseLogs !== 'boolean' || typeof result.logDirectory !== 'string' || !result.logDirectory.trim() ||
       typeof result.logger !== 'function' || typeof result.telemetry !== 'function' || !Array.isArray(result.allowedOrigins) ||
       result.allowedOrigins.some(origin => typeof origin !== 'string' || !/^https?:\/\/[^\s/?#]+$/.test(origin))) {
@@ -53,7 +57,7 @@ export function resolveOptions(options: ServerOptions = {}): ResolvedOptions {
   return result;
 }
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env, argv: readonly string[] = process.argv.slice(2)): ServerOptions {
-  const options: ServerOptions = {};
+  const options: ServerOptions = { sessionDirectory: env.SESSION_DIRECTORY ?? './sessions' };
   if (env.HOST !== undefined) options.host = env.HOST;
   if (env.LOG_DIRECTORY !== undefined) options.logDirectory = env.LOG_DIRECTORY;
   for (const key of numericKeys) {

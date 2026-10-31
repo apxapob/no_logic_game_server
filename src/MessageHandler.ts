@@ -12,6 +12,12 @@ function translations(value: unknown): boolean {
       typeof text.title === 'string' && text.title.trim().length > 0 && text.title.length <= 100 &&
       typeof text.body === 'string' && text.body.trim().length > 0 && text.body.length <= 500));
 }
+function notice(value: unknown): boolean {
+  return value === null || (isRecord(value) && typeof value.eventId === 'string' && /^[A-Za-z0-9_.:\-]{1,128}$/.test(value.eventId) &&
+    Number.isSafeInteger(value.at) && Number(value.at) >= 0 && Array.isArray(value.to) && value.to.length <= 64 && value.to.every(isUuid) &&
+    typeof value.title === 'string' && value.title.length > 0 && value.title.length <= 100 &&
+    typeof value.body === 'string' && value.body.length > 0 && value.body.length <= 500 && translations(value.translations));
+}
 function boundedJson(value: unknown, depth = 0): boolean {
   if (depth > 32) return false;
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
@@ -26,6 +32,12 @@ export function validateMessage(value: unknown, maxRoomPlayers: number, maxAccou
   // Normalize only envelopes whose entire tree is bounded, including extension fields.
   if (!boundedJson(value)) return false;
   switch (value.method) {
+    case 'getSavedRooms': return isRecord(d) && Array.isArray(d.ids) && d.ids.length <= 20 && d.ids.every(isUuid);
+    case 'getSession': return isRecord(d) && isUuid(d.requestId);
+    case 'getSessionChunk': return isRecord(d) && isUuid(d.requestId) && Number.isSafeInteger(d.revision) && Number(d.revision) >= 0 && Number.isSafeInteger(d.offset) && Number(d.offset) >= 0;
+    case 'beginSession': return isRecord(d) && isUuid(d.requestId) && Number.isSafeInteger(d.revision) && Number(d.revision) >= 0 &&
+      Number.isSafeInteger(d.generation) && Number(d.generation) >= 0 && Number.isSafeInteger(d.size) && Number(d.size) > 0;
+    case 'commitSession': return isRecord(d) && isUuid(d.requestId) && notice(d.scheduled) && notice(d.immediate);
     case 'authenticate': return isRecord(d) && (d.name === undefined || name(d.name)) &&
       (d.playerId === undefined || isUuid(d.playerId)) && (d.password === undefined || (typeof d.password === 'string' && password(d.password)));
     case 'Pong': return typeof d === 'number' && Number.isFinite(d);

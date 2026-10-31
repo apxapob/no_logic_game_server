@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto';
 export class Room {
-  readonly roomId = randomUUID();
+  persistent = false;
+  startData: unknown = null;
+  sessionState: Buffer = Buffer.alloc(0);
+  revision = 0;
+  updatedAt = Date.now();
+  upload: { id: string; owner: string; generation: number; revision: number; bytes: Buffer; offset: number; at: number } | null = null;
   readonly active = new Set<string>();
   readonly reservations = new Set<string>();
   gameStarted = false;
@@ -17,12 +22,13 @@ export class Room {
   }
   roomMeta: unknown = null;
   constructor(public roomName: string, public ownerId: string, public maxPlayers: number,
-    public password: string | null, public gameData: unknown) {}
+    public password: string | null, public gameData: unknown, readonly roomId: string = randomUUID()) {}
   toNetObject(rtt: number | null = null) {
     return { roomId: this.roomId, ownerId: this.ownerId, name: this.roomName,
       players: [...this.active], maxPlayers: this.maxPlayers, hasPassword: this.password !== null,
       gameData: this.gameData, gameStarted: this.gameStarted, joinClosed: this.joinClosed, rtt, metaData: this.roomMeta,
       ...(this.hostMigration ? { hostGeneration: this.hostGeneration } : {}),
-      ...(this.binaryRelay ? { binaryRelay: true } : {}) };
+      ...(this.binaryRelay ? { binaryRelay: true } : {}),
+      ...(this.persistent ? { persistent: true, participants: [...this.gamePlayers] } : {}) };
   }
 }

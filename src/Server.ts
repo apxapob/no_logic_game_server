@@ -8,6 +8,7 @@ import { Room } from './Room';
 import { isRecord, ProtocolMessage, validateMessage } from './MessageHandler';
 import { redact } from './Logging';
 import { binaryFrom, binaryTarget } from './BinaryRelay';
+import { SessionStore, Notice } from './SessionStore';
 export type { ServerOptions } from './config';
 interface Connection {
   id: string; ip: string;
@@ -17,7 +18,7 @@ interface Connection {
 }
 interface Attempts { since: number; count: number }
 interface Transport { id: string; created: number; websocket: boolean; ip: string }
-const roomIndependentMethods = new Set(['getRooms', 'getPlayers', 'changeName', 'createRoom', 'enterRoom', 'leaveRoom', 'setPushDevice']);
+const roomIndependentMethods = new Set(['getRooms', 'getSavedRooms', 'getPlayers', 'changeName', 'createRoom', 'enterRoom', 'leaveRoom', 'setPushDevice']);
 export class Server {
   readonly options: ResolvedOptions;
   private readonly players = new Map<string, Player>();
@@ -35,7 +36,12 @@ export class Server {
   private readonly startupAbort = new AbortController();
   private pushesInFlight = 0;
   private cancelStartup: (() => void) | null = null;
-  constructor(options: ServerOptions = {}) { this.options = resolveOptions(options); }
+  private readonly store: SessionStore;
+  private delivering = false;
+  constructor(options: ServerOptions = {}) {
+    this.options = resolveOptions(options);
+    this.store = new SessionStore(this.options.sessionDirectory, this.options.sessionMaxBytes, text => this.log(text));
+  }
   private log(text: string): void {
     try { this.options.telemetry(text, {}); } catch { /* Diagnostics cannot affect lifecycle. */ }
     try { this.options.logger(this.options.verboseLogs ? JSON.stringify({ time: new Date().toISOString(), event: text }) : text); }
@@ -195,6 +201,7 @@ export class Server {
           socket.destroy();
         }
       });
+      for (const room of this.rooms.values()) if (room.persistent) this.store.save(room);
       this.connections.clear(); this.transports.clear(); this.rooms.clear(); this.online.clear(); this.players.clear(); this.attempts.clear();
       this.state = 'stopped'; this.log('server stopped');
     })();
@@ -224,7 +231,10 @@ export class Server {
       messages: 0, delayedBytes: 0, timers: new Set() };
     this.connections.set(ws, c);
     this.trace('connection.connected', {}, c);
-    ws.on('message', (raw, binary) => this.receive(c, raw, binary));
+    ws.on('message', (raw, binary) => {
+      try { this.receive(c, raw, binary); }
+      catch { this.log('storage operation failed'); this.error(c, 'storage_error'); }
+    });
     ws.on('ping', data => this.control(c, data, true));
     ws.on('pong', data => this.control(c, data, false));
     ws.on('error', (error: NodeJS.ErrnoException) => {
@@ -282,6 +292,9 @@ export class Server {
       this.schedule(c, bytes.length, () => {
         const room = this.activeRoom(p);
         if (!room) return;
+        if (bytes[0] === 2 && room.persistent) {
+          this.uploadChunk(p, room, bytes); return;
+        }
         if (room.binaryRelay) {
           const target = binaryTarget(bytes);
           if (target === undefined) { this.error(c, 'invalid_message'); return; }
@@ -325,7 +338,9 @@ export class Server {
       c.timers.delete(timer); c.delayedBytes -= size;
       // Global queries and ordered leave/enter commands survive membership changes;
       // room-scoped traffic must never migrate into a later room or session.
-      if (this.current(c) && p === c.player && (!roomScoped || p?.membershipVersion === version)) action();
+      if (this.current(c) && p === c.player && (!roomScoped || p?.membershipVersion === version)) {
+        try { action(); } catch { this.log('storage operation failed'); this.error(c, 'storage_error'); }
+      }
       else this.trace('message.discarded', { reason: 'session_or_room_changed', bytes: size }, c);
     }, this.options.sendDelayMs);
     c.timers.add(timer);
@@ -336,7 +351,7 @@ export class Server {
     let p: Player;
     let created = false;
     if (data.playerId !== undefined || data.password !== undefined) {
-      const retained = typeof data.playerId === 'string' ? this.players.get(data.playerId) : undefined;
+      const retained = typeof data.playerId === 'string' ? this.players.get(data.playerId) ?? this.store.account(data.playerId) : undefined;
       const provided = Buffer.from(typeof data.password === 'string' ? data.password : '');
       const secret = Buffer.from(retained?.password ?? '');
       if (!retained || secret.length !== provided.length || !timingSafeEqual(secret, provided)) {
@@ -344,6 +359,7 @@ export class Server {
         this.sendConnection(c, { method: 'wrongPassword' }); this.closeConnection(c, 1008, 'Authentication failed'); return;
       }
       p = retained;
+      this.players.set(p.playerId, p);
       // A fresh client has no world even if the old socket has not timed out yet.
       // Let its fixed-roster game pause and require a normal authenticated re-entry.
       const previousRoom = this.activeRoom(p);
@@ -363,9 +379,11 @@ export class Server {
     }
     p.ws = c.ws; p.offlineSince = null; p.rtt = null;
     c.player = p; this.online.add(p);
+    this.store.saveAccount(p);
     this.trace('authentication.succeeded', { created }, c);
     if (created) this.sendConnection(c, { method: 'accountCreated', data: { name: p.playerName, playerId: p.playerId, password: p.password } });
     this.sendConnection(c, { method: 'onConnected', data: { online: this.online.size,
+      ...(this.options.sessionDirectory ? { persistentSessions: true } : {}),
       ...(this.options.pushSender ? { pushNotifications: true } : {}) } });
     // Session replacement retains actual membership and its original entry timestamp.
     const activeRoom = this.activeRoom(p);
@@ -471,7 +489,7 @@ export class Server {
   }
   private enter(p: Player, id: string, password: unknown): void {
     if (p.roomId) { this.playerError(p, p.roomId === id ? 'already_in_room' : 'in_other_room'); return; }
-    const room = this.rooms.get(id);
+    const room = this.rooms.get(id) ?? (this.options.sessionDirectory ? this.store.load(id) : undefined);
     if (!room) { this.playerError(p, 'no_room'); return; }
     if (!room.gameStarted && room.joinClosed) { this.playerError(p, 'room_closed'); return; }
     if (room.gameStarted && !room.canRejoin(p.playerId)) {
@@ -479,6 +497,10 @@ export class Server {
     }
     if (!room.gameStarted && (password ?? null) !== room.password) { this.playerError(p, 'wrong_password'); return; }
     if (room.active.size >= room.maxPlayers) { this.playerError(p, 'full_room'); return; }
+    if (room.persistent && room.active.size === 0) {
+      room.ownerId = p.playerId; room.hostGeneration++; room.upload = null;
+    }
+    this.rooms.set(id, room);
     p.roomId = id; p.roomEntryTimestamp = Date.now(); p.membershipVersion++;
     room.active.add(p.playerId); room.reservations.delete(p.playerId);
     this.trace('room.entered', { roomId: room.roomId, playerId: p.playerId });
@@ -492,6 +514,7 @@ export class Server {
     if (!room) return;
     this.trace('room.left', { roomId: room.roomId, playerId: p.playerId, disconnected });
     room.active.delete(p.playerId);
+    if (room.upload?.owner === p.playerId) room.upload = null;
     if (disconnected && room.gameStarted) room.reservations.add(p.playerId);
     else room.reservations.delete(p.playerId);
     this.broadcast(room, { method: disconnected ? 'playerDisconnected' : 'playerLeft', data: p.playerId });
@@ -503,6 +526,9 @@ export class Server {
       room.active.clear();
     }
     if (room.active.size === 0) {
+      if (room.persistent) {
+        this.sleepRoom(room); return;
+      }
       room.reservations.clear(); this.rooms.delete(room.roomId);
       this.trace('room.deleted', { roomId: room.roomId });
       this.lobby({ method: 'roomDeleted', data: room.roomId }); return;
@@ -537,10 +563,18 @@ export class Server {
       return;
     }
     switch (message.method) {
+      case 'getSavedRooms': {
+        for (const id of record.ids as string[]) {
+          const saved = this.rooms.get(id) ?? (this.options.sessionDirectory ? this.store.load(id, false) : undefined);
+          this.send(p, { method: 'savedRoom', data: { roomId: id,
+            room: saved?.persistent && saved.gamePlayers.has(p.playerId) ? this.roomDto(saved) : null } });
+        }
+        return;
+      }
       case 'getRooms': this.roomPage(p, typeof record.after === 'string' ? record.after.toLowerCase() : undefined); return;
       case 'getPlayers': {
         const selected = Array.isArray(d) ? d.flatMap(id => {
-          const player = typeof id === 'string' ? this.players.get(id) : undefined;
+          const player = typeof id === 'string' ? this.players.get(id) ?? this.store.account(id) : undefined;
           return player ? [player] : [];
         }) : [...this.online];
         const dto = selected.map(player => player.toNetObject()).sort((a, b) => {
@@ -566,10 +600,12 @@ export class Server {
           p.pushDevices.set(deviceId, { token, foreground: record.foreground === true,
             language: typeof record.language === 'string' ? record.language : 'en' });
         }
+        this.store.saveAccount(p);
         this.send(p, { method: 'pushDeviceUpdated' }); return;
       }
       case 'changeName': {
         if (typeof d === 'string') p.playerName = d;
+        this.store.saveAccount(p);
         const room = this.activeRoom(p);
         if (room) this.broadcast(room, { method: 'nameChanged', data: { name: p.playerName, playerId: p.playerId } }); return;
       }
@@ -590,6 +626,9 @@ export class Server {
     }
     const room = this.activeRoom(p);
     if (!room) { this.playerError(p, 'no_room'); return; }
+    if (['getSession', 'getSessionChunk', 'beginSession', 'commitSession'].includes(message.method)) {
+      this.sessionMessage(p, room, message.method, record); return;
+    }
     const targets = Array.isArray(record.to) ? new Set(record.to.filter((id): id is string => typeof id === 'string')) : undefined;
     switch (message.method) {
       case 'notifyPlayers': {
@@ -667,6 +706,9 @@ export class Server {
           if (json === null) return;
           room.fixedRoster = record.fixedRoster === true;
           room.hostMigration = room.fixedRoster && record.hostMigration === true;
+          room.persistent = !!this.options.sessionDirectory && record.persistent === true && room.hostMigration;
+          room.startData = room.persistent ? d : null;
+          room.updatedAt = Date.now();
           if (room.fixedRoster) for (const id of room.active) room.gamePlayers.add(id);
           room.gameStarted = true; this.broadcastJson(room, json); this.lobby({ method: 'roomBlock', data: room.roomId });
           this.trace('room.game_started', { roomId: room.roomId, ownerId: p.playerId });
@@ -683,6 +725,103 @@ export class Server {
       }
     }
   }
+  private sleepRoom(room: Room): void {
+    try {
+      this.store.save(room);
+      this.rooms.delete(room.roomId);
+      for (const id of this.store.prune(new Set(this.rooms.keys()))) this.lobby({ method: 'roomDeleted', data: id });
+    } catch { this.log('session save failed; retaining room in memory'); }
+  }
+  private sessionReply(p: Player, requestId: unknown, data: Record<string, unknown>): void {
+    this.send(p, { method: 'sessionReply', data: { requestId, ...data } });
+  }
+  private uploadChunk(p: Player, room: Room, bytes: Buffer): void {
+    const upload = room.upload;
+    if (bytes.length < 22 || !upload) return;
+    const id = Buffer.from(upload.id.replaceAll('-', ''), 'hex');
+    if (!bytes.subarray(1, 17).equals(id) || upload.owner !== p.playerId || room.ownerId !== p.playerId ||
+      upload.generation !== room.hostGeneration || bytes.readUInt32BE(17) !== upload.offset ||
+      upload.offset + bytes.length - 21 > upload.bytes.length) {
+      this.sessionReply(p, upload.id, { error: 'stale_session' }); room.upload = null; return;
+    }
+    bytes.copy(upload.bytes, upload.offset, 21);
+    upload.offset += bytes.length - 21; upload.at = Date.now();
+    this.sessionReply(p, upload.id, { offset: upload.offset });
+  }
+  private sessionMessage(p: Player, room: Room, method: string, data: Record<string, unknown>): void {
+    const reply = (value: Record<string, unknown>) => this.sessionReply(p, data.requestId, value);
+    if (!room.persistent) { reply({ error: 'unavailable' }); return; }
+    if (method === 'getSession') {
+      reply({ revision: room.revision, size: room.sessionState.length, startData: room.startData, generation: room.hostGeneration }); return;
+    }
+    if (method === 'getSessionChunk') {
+      const offset = Number(data.offset);
+      if (data.revision !== room.revision || offset >= room.sessionState.length) { reply({ error: 'stale_session' }); return; }
+      const chunk = room.sessionState.subarray(offset, offset + Math.min(32000, this.options.maxPayloadBytes - 21, this.options.maxBufferedBytes - 31));
+      const bytes = Buffer.alloc(21 + chunk.length); bytes[0] = 3;
+      Buffer.from((data.requestId as string).replaceAll('-', ''), 'hex').copy(bytes, 1);
+      bytes.writeUInt32BE(offset, 17); chunk.copy(bytes, 21); this.sendBytes(p, bytes, true); return;
+    }
+    if (room.ownerId !== p.playerId) { reply({ error: 'not_room_owner' }); return; }
+    if (method === 'beginSession') {
+      if (data.revision !== room.revision || data.generation !== room.hostGeneration) { reply({ error: 'stale_session' }); return; }
+      if (Number(data.size) > this.options.maxSessionBytes) { reply({ error: 'payload_too_large' }); return; }
+      room.upload = { id: data.requestId as string, owner: p.playerId, generation: room.hostGeneration,
+        revision: room.revision, bytes: Buffer.alloc(Number(data.size)), offset: 0, at: Date.now() };
+      reply({ offset: 0 }); return;
+    }
+    const upload = room.upload;
+    if (!upload || upload.id !== data.requestId || upload.owner !== p.playerId || upload.generation !== room.hostGeneration ||
+      upload.revision !== room.revision || upload.offset !== upload.bytes.length) { reply({ error: 'stale_session' }); return; }
+    const scheduled = data.scheduled as Notice | null;
+    const immediate = data.immediate as Notice | null;
+    if ([scheduled, immediate].some(notice => notice?.to.some(id => !room.gamePlayers.has(id)))) { reply({ error: 'invalid_message' }); return; }
+    // No client callbacks can interleave between the queued notification write and the state swap.
+    try { this.store.commitNotices(room, scheduled, immediate); }
+    catch { reply({ error: 'storage_error' }); return; }
+    if (immediate) {
+      room.pushEvents.add(immediate.eventId);
+      if (room.pushEvents.size > 128) room.pushEvents.delete(room.pushEvents.values().next().value!);
+    }
+    room.sessionState = upload.bytes; room.revision++; room.updatedAt = Date.now(); room.upload = null;
+    reply({ revision: room.revision });
+    this.broadcast(room, { method: 'sessionUpdated', data: { revision: room.revision } }, p.playerId);
+    void this.deliverNotices();
+  }
+  private async deliverNotices(): Promise<void> {
+    if (this.delivering || !this.options.pushSender || this.state !== 'running') return;
+    this.delivering = true;
+    try {
+      for (const [roomId, jobs] of this.store.jobs) for (const job of jobs) {
+        if (this.state !== 'running') return;
+        if (job.at > Date.now() || job.retryAt > Date.now()) continue;
+        let failed = false;
+        for (const playerId of job.to) {
+          const player = this.players.get(playerId) ?? this.store.account(playerId);
+          if (!player) continue;
+          for (const [deviceId, device] of player.pushDevices) {
+            if (!this.store.jobs.get(roomId)?.includes(job)) break;
+            const key = `${playerId}:${deviceId}`;
+            if (job.done.includes(key)) continue;
+            // An open different match must not suppress this match's notification.
+            if (player.ws?.readyState === WebSocket.OPEN && player.roomId === roomId && device.foreground) { job.done.push(key); continue; }
+            const text = job.translations?.[device.language] ?? job;
+            try {
+              const result = await this.options.pushSender(device.token, { title: text.title, body: text.body, roomId, eventId: job.eventId });
+              if (result === 'invalid') { player.pushDevices.delete(deviceId); this.store.saveAccount(player); }
+              job.done.push(key);
+            } catch { failed = true; }
+          }
+        }
+        job.retryAt = failed ? Date.now() + 30000 : Number.MAX_SAFE_INTEGER;
+        // A commit or eviction may replace this job while a provider request is in flight.
+        const current = this.store.jobs.get(roomId);
+        if (this.state === 'running' && current?.includes(job))
+          this.store.setJobs(roomId, !failed && !job.scheduled ? current.filter(item => item !== job) : current);
+      }
+    } catch { this.log('scheduled notification failed'); }
+    finally { this.delivering = false; }
+  }
   private expireAccounts(now: number): void {
     for (const [id, p] of this.players) if (!p.ws && p.offlineSince !== null && now - p.offlineSince >= this.options.accountTtlMs) {
       if ([...this.rooms.values()].some(room => room.fixedRoster && room.gamePlayers.has(id))) continue;
@@ -694,6 +833,11 @@ export class Server {
   private sweep(): void {
     if (this.state !== 'running') return;
     const now = Date.now();
+    for (const room of this.rooms.values()) {
+      if (room.upload && now - room.upload.at > 30000) room.upload = null;
+      if (room.persistent && room.active.size === 0) this.sleepRoom(room);
+    }
+    void this.deliverNotices();
     // Bound pre-upgrade/partial HTTP transports without introducing another timer.
     for (const [socket, transport] of this.transports) {
       if (!transport.websocket && now - transport.created >= this.options.authTimeoutMs) {

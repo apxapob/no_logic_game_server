@@ -1,6 +1,60 @@
 # No Logic Game Server
 
-Bounded, in-memory WebSocket rooms for client-authoritative games. The server relays data; it does not validate gameplay or prevent cheating.
+WebSocket rooms for client-authoritative games, with optional opaque session persistence. The server relays and stores data; it does not validate gameplay or prevent cheating.
+
+## Persistent sessions
+
+The CLI enables storage in `SESSION_DIRECTORY` (default `./sessions`). Use an absolute,
+writable directory outside release checkouts in production. Embedded `new Server()`
+instances enable storage by supplying `sessionDirectory`. `onConnected` advertises
+`persistentSessions: true`; game clients request it with
+`startGame: {fixedRoster:true, hostMigration:true, persistent:true, ...}`.
+General requests this automatically for every new online match.
+
+Persistent rooms survive an empty active roster. The last departure atomically writes
+the room header and opaque binary state, then releases the world from RAM. Graceful
+shutdown also saves active rooms. A process crash can lose changes since the last
+disk save; acknowledged updates while a participant is connected reside in RAM.
+The first participant returning becomes host with a new generation. Incomplete
+uploads are discarded; only a complete committed state becomes visible.
+
+Clients retain their room IDs. `getSavedRooms {ids: UUID[]}` accepts up to 20 IDs and
+returns one `savedRoom {roomId,room:DTO|null}` per ID, restricted to participants.
+Queries read only headers and do not retain inactive worlds. `getRooms` still lists
+live rooms. DTOs for persistent games include `persistent:true` and `participants`;
+`players` continues to mean currently connected members, and may be empty.
+Accounts and notification registrations are persisted separately, so existing
+credentials remain valid after restart and after memory-cache expiry.
+
+The storage protocol is game-independent:
+
+- `getSession {requestId}` returns `sessionReply` with `revision`, `generation`,
+  `size`, and the opaque original `startData`.
+- `getSessionChunk {requestId,revision,offset}` returns a binary frame: byte 0 is
+  `3`, bytes 1–16 are the request UUID, bytes 17–20 are the big-endian byte offset,
+  and the remainder is the state chunk (at most 32,000 bytes).
+- The current owner calls `beginSession {requestId,revision,generation,size}`,
+  then uploads binary frames with the same layout and byte 0 equal to `2`.
+  Each chunk receives `sessionReply {requestId,offset}` with the next byte offset.
+- `commitSession {requestId,scheduled,immediate}` accepts a complete upload only
+  for the current owner, generation and revision. It replies with the next revision
+  and sends `sessionUpdated {revision}` to peers. Rejected requests return
+  `sessionReply {requestId,error}`. Request IDs are UUIDs; clients pace chunks and
+  reload after `stale_session` or a lost acknowledgement.
+
+Both notification fields are either null or `{eventId,at,to,title,body,translations?}`.
+`at` is an absolute Unix timestamp in milliseconds (zero means now). The server knows
+nothing about turns or deadlines. A commit replaces the scheduled event and retains
+queued immediate deliveries. Small notification jobs live separately from worlds,
+survive restart, and retry transient provider failures every 30 seconds. Delivery is
+at-least-once across an interrupted provider acknowledgement; devices should coalesce
+by room/event. Only a foreground device viewing that room suppresses its notification.
+
+`SESSION_MAX_BYTES` / `sessionMaxBytes` defaults to 1 GiB of room files. When exceeded,
+the oldest **last state update** among inactive rooms is removed, with its notification
+jobs. Active rooms are protected. Reading a room does not refresh its age.
+`MAX_SESSION_BYTES` / `maxSessionBytes` defaults to 16 MiB per opaque state; it bounds
+individual transfers, not total RAM. The server never decompresses the state.
 
 ## Run
 
@@ -83,7 +137,7 @@ Starting with `{fixedRoster:true,...}` reserves seats for the authenticated acco
 
 In this mode the original owner is required for the game's lifetime: their departure deletes the room and releases the surviving players, without electing a new owner. Clients must handle the owner's `playerLeft`/`playerDisconnected` event by ending the game. If the same account authenticates before its old socket has timed out, the old game connection is removed first so the host can pause and restore the returning client on re-entry. The relay does not restore gameplay itself: the host transfers state to the original player using authenticated `sendTo` / `messageFromPlayer` messages. Clients decide when recovery is complete and gameplay can resume.
 
-Clients that implement host recovery can opt in with `startGame: {fixedRoster: true, hostMigration: true, ...}`. The server then elects the first remaining active participant when the owner leaves or disconnects, preserving the original roster and reconnect permissions. For these rooms, `newRoomOwner` carries `{playerId, generation}` instead of a string; the generation increases on each transfer, and room snapshots include `hostGeneration` (initially zero). Clients must fence old-generation messages and synchronize game state and pending commands before resuming. The server does not store game logic or commands. When the last active participant leaves, the room is still deleted. Omitting `hostMigration` preserves the original owner-loss behavior.
+Clients that implement host recovery can opt in with `startGame: {fixedRoster: true, hostMigration: true, ...}`. The server then elects the first remaining active participant when the owner leaves or disconnects, preserving the original roster and reconnect permissions. For these rooms, `newRoomOwner` carries `{playerId, generation}` instead of a string; the generation increases on each transfer, and room snapshots include `hostGeneration` (initially zero). Clients must fence old-generation messages and synchronize game state and pending commands before resuming. The relay does not interpret game logic or commands; persistent games can store them as an opaque session blob. Without `persistent:true`, the room is still deleted when the last active participant leaves. Persistent rooms are written to disk instead (see Persistent sessions). Omitting `hostMigration` preserves the original owner-loss behavior.
 
 ### Server events
 

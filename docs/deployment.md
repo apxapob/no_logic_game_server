@@ -15,11 +15,26 @@ Authentication is the first WebSocket frame. Never put account or room secrets i
 
 Caddy forwards WebSocket upgrades automatically. The server intentionally uses the actual socket remote IP and does not trust X-Forwarded-For. Behind this loopback proxy **all clients share the proxy-IP connection and attempt quotas**. Account for this in MAX_CONNECTIONS_PER_IP and MAX_CONNECTIONS_PER_MINUTE without removing global bounds. Do not simply trust forwarded headers: individual client quotas require a separately designed trusted-proxy policy and network boundary. Origin allowlisting is browser protection, not authentication; native clients can spoof Origin.
 
-Keep limits finite; budget process memory for accounts, rooms, payloads and queued sends. Monitor health, resource use and rejected traffic. Accounts are memory-only, offline TTL defaults to 300000 ms; rooms disappear on last active disconnect and everything disappears on restart. A started game can reconnect an eligible peer only while another peer remains active. There is no persistence, multi-node shared state or transparent failover.
+Keep limits finite; budget process memory for accounts, rooms, payloads and queued sends. Monitor health, resource use and rejected traffic. Without session storage, accounts expire from memory after the offline TTL (300000 ms by default) and rooms disappear on last active disconnect. With storage enabled, accounts survive restart and persistent games can resume without active peers. This remains a single-node service without transparent failover.
 
 The room owner controls game state. JSON sender identity is server supplied, but raw binary relay has no authenticated sender header. Client-authoritative gameplay cannot prevent cheating or guarantee fair results; implement server-authoritative validation for competitive or valuable outcomes. TLS and quotas do not change that trust boundary.
 
 ## Optional detailed logging with systemd
+
+Persistent sessions require a stable writable directory, for example:
+
+```ini
+[Service]
+StateDirectory=no-logic-game-server
+StateDirectoryMode=0700
+Environment=SESSION_DIRECTORY=/var/lib/no-logic-game-server/sessions
+Environment=SESSION_MAX_BYTES=1073741824
+```
+
+Back up this directory together: room files, account credentials and notification
+jobs belong to the same service. Keep it outside release/rollback directories.
+Graceful service stops flush active worlds; forced termination can lose updates
+made while a room was active. No game rules execute on this service.
 
 For a systemd service, configure a persistent writable directory outside the release
 checkout. For example, an override for `no-logic-game-server.service` can contain:

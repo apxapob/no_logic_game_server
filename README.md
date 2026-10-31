@@ -81,6 +81,13 @@ npm run benchmark         # bounded local smoke, not a capacity guarantee
 npm audit
 ```
 
+`package.json` pins transitive `glob` and `minimatch` versions through npm overrides
+for [GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4)
+and [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+Remove these overrides once the ESLint/typescript-eslint and Firebase dependency
+chains resolve patched versions on their own; verify with `npm ci`, `npm run check`,
+and `npm audit`. Do not use `npm audit fix --force` to downgrade the lint toolchain.
+
 ## Breaking authentication migration
 
 Connect to `ws://127.0.0.1:8080/`, then **first frame**, within 5 seconds:

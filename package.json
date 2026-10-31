@@ -20,6 +20,10 @@
     "benchmark": "npm run build && node scripts/benchmark.cjs"
   },
   "license": "MIT",
+  "overrides": {
+    "glob": "14.0.3",
+    "minimatch": "11.0.3"
+  },
   "dependencies": {
     "firebase-admin": "^14.5.0",
     "ws": "^8.22.0"

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { setTimeout: delay } = require('node:timers/promises');
 const WebSocket = require('ws');
 const net = require('node:net');
-const { Server } = require('../dist/Server.js');
+const { Server } = process.env.RELAY_BACKEND === 'rust' ? require('./rust-server.cjs') : require('../dist/Server.js');
 
 const TIMEOUT = 2500;
 
@@ -33,6 +33,7 @@ async function startServer(t, options = {}) {
 
 class Client {
   constructor(url, options = {}) {
+    this.sync = process.env.RELAY_BACKEND === 'rust' ? () => require('./rust-server.cjs').sync(url) : () => Promise.resolve();
     this.messages = [];
     this.waiters = [];
     this.closed = false;
@@ -47,7 +48,7 @@ class Client {
     this.closePromise = new Promise(resolve => {
       this.ws.once('close', (code, reason) => {
         this.closed = true;
-        resolve({ code, reason: reason.toString() });
+        resolve(this.sync().then(() => ({ code, reason: reason.toString() })));
         for (const waiter of [...this.waiters]) {
           waiter.reject(new Error('Socket closed while awaiting message'));
         }
@@ -73,7 +74,7 @@ class Client {
     const matches = message => message !== null && typeof message === 'object' &&
       (method === 'binary' ? message.binary : message.method === method) && predicate(message.data, message);
     const index = this.messages.findIndex(matches);
-    if (index !== -1) return Promise.resolve(this.messages.splice(index, 1)[0]);
+    if (index !== -1) { const result = this.messages.splice(index, 1)[0]; return this.sync().then(() => result); }
     if (this.closed) return Promise.reject(new Error(`Socket closed awaiting ${method}`));
     return new Promise((resolve, reject) => {
       const remove = () => {
@@ -83,7 +84,7 @@ class Client {
       };
       const waiter = {
         matches,
-        resolve: value => { remove(); resolve(value); },
+        resolve: value => { remove(); resolve(this.sync().then(() => value)); },
         reject: error => { remove(); reject(error); },
       };
       const timer = setTimeout(() => waiter.reject(new Error(`Timed out awaiting ${method}`)), timeout);

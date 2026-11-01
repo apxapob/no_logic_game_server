@@ -1,5 +1,7 @@
 # Generated TypeScript output
 dist/
+target/
+test-results/
 *.tsbuildinfo
 
 # Logs

@@ -17,7 +17,12 @@
     "test": "npm run build && node --test test/*.test.cjs",
     "check": "npm run typecheck && npm run lint && npm test",
     "demo": "node scripts/demo.mjs",
-    "benchmark": "npm run build && node scripts/benchmark.cjs"
+    "benchmark": "npm run build && node scripts/benchmark.cjs",
+    "build:rust": "cargo build --release --locked",
+    "start:rust": "cargo run --release --locked --",
+    "test:rust": "npm run build && cargo test --locked && cargo build --locked && node scripts/test-rust.cjs",
+    "check:rust": "cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && npm run test:rust",
+    "benchmark:compare": "npm run build && npm run build:rust && node scripts/compare-rust.cjs"
   },
   "license": "MIT",
   "overrides": {

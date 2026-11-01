@@ -107,7 +107,7 @@ test('authentication timeout and repeated authentication are enforced', async t 
   const { server, url } = await startServer(t, { authTimeoutMs: 150 });
   const pending = rawClient(t, url);
   await pending.opened;
-  assert.equal(server.stats().pendingConnections, 1);
+  await eventually(() => server.stats().pendingConnections === 1, 'pending connection registration');
   await waitClosed(pending);
   assert.equal(server.stats().accounts, 0);
   const client = await connect(t, url);

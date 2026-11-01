@@ -2,6 +2,11 @@
 
 WebSocket rooms for client-authoritative games, with optional opaque session persistence. The server relays and stores data; it does not validate gameplay or prevent cheating.
 
+An experimental compatible Rust executable is available on this branch. Build with
+`npm run build:rust`, run with `npm run start:rust`, and compare with
+`npm run benchmark:compare`. See [Rust compatibility, validation and measurements](docs/rust-port.md).
+The Node implementation remains the reference and `npm start` is unchanged.
+
 ## Persistent sessions
 
 The CLI enables storage in `SESSION_DIRECTORY` (default `./sessions`). Use an absolute,

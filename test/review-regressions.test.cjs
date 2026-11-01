@@ -228,7 +228,7 @@ test('control quotas apply before authentication and to unsolicited pong floods'
   }
 });
 
-test('paused-reader ping flood stays within the control quota and outbound queue budget', async t => {
+test('paused-reader ping flood stays within the control quota and outbound queue budget', { skip: process.env.RELAY_BACKEND === 'rust' ? 'Node ws monkeypatch; Rust output budget has native tests' : false }, async t => {
   const { server, url } = await startServer(t);
   const healthy = await connect(t, url);
   const abusive = await connect(t, url, {}, { autoPong: false });
@@ -258,7 +258,7 @@ test('paused-reader ping flood stays within the control quota and outbound queue
   await healthy.barrier();
 });
 
-test('manual control replies enforce a saturated byte queue independently of a higher rate quota', async t => {
+test('manual control replies enforce a saturated byte queue independently of a higher rate quota', { skip: process.env.RELAY_BACKEND === 'rust' ? 'Node ws monkeypatch; Rust output budget has native tests' : false }, async t => {
   const { server, url } = await startServer(t, { maxBufferedBytes: 512, maxMessagesPerSecond: 20000 });
   const healthy = await connect(t, url);
   const slow = await connect(t, url, {}, { autoPong: false });

@@ -238,6 +238,7 @@ test('interrupted, repeated, and expired chunk uploads leave the previous state 
   assert.equal((await host.wait('sessionReply', d => d.requestId === requestId)).data.error, 'stale_session');
   assert.equal((await load(host)).bytes.toString(), 'confirmed');
   await reply(host, 'beginSession', { size: 10, revision: 1, generation: 0 });
+  await eventually(() => server.rooms.get(room.roomId)?.upload, 'upload visible to test adapter');
   server.rooms.get(room.roomId).upload.at = Date.now() - 31000;
   await eventually(() => server.rooms.get(room.roomId).upload === null);
   assert.equal((await load(host)).bytes.toString(), 'confirmed');
@@ -271,7 +272,7 @@ test('200 sleeping sessions remain off the live-room map; batch lookups and ever
     assert.equal(restored.revision, i + 1); assert.deepEqual(restored.sessionState, bytes);
   }
   await enterRoom(c, { roomId: ids[37] });
-  assert.equal(server.stats().rooms, 1);
+  await eventually(() => server.stats().rooms === 1, 'active room visible to test adapter');
   assert.deepEqual((await load(c)).bytes, bytes);
   c.send('leaveRoom'); await eventually(() => server.stats().rooms === 0);
 });
@@ -299,6 +300,16 @@ test('hard process kill preserves sleeping state and active changes roll back to
   const { once } = require('node:events');
   const dir = directory();
   async function child() {
+    if (global.process.env.RELAY_BACKEND === 'rust') {
+      const binary = global.process.env.RUST_SERVER_BINARY || join(__dirname, '../target/debug/no-logic-game-server' + (global.process.platform === 'win32' ? '.exe' : ''));
+      const child = require('node:child_process').spawn(binary, [], { env: { ...global.process.env, HOST: '127.0.0.1', PORT: '0', SESSION_DIRECTORY: dir, TELEMETRY_ENABLED: 'false' }, stdio: ['pipe', 'pipe', 'inherit'] });
+      const exited = once(child, 'exit');
+      t.after(async () => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); await exited; });
+      const url = await new Promise(resolve => require('node:readline').createInterface({ input: child.stdout }).on('line', line => {
+        const record = JSON.parse(line); if (record.event === 'server.listening') resolve(`ws://127.0.0.1:${record.address.port}/`);
+      }));
+      return { url, kill: async () => { child.kill('SIGKILL'); await exited; } };
+    }
     const process = fork(join(__dirname, 'fixtures/session-child.cjs'), [dir], { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
     const exited = once(process, 'exit');
     t.after(async () => { if (process.exitCode === null && process.signalCode === null) process.kill('SIGKILL'); await exited; });

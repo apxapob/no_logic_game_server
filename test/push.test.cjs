@@ -23,7 +23,8 @@ test('each device gets its chosen game language, including a changed preference 
   host.send('notifyPlayers', { to: [guest.account.playerId], eventId: 'turn.localized', title: 'Default', body: 'Fallback',
     translations: Object.fromEntries(locales.map(language => [language, { title: `Title ${language}`, body: `Body ${language}` }])) });
   await eventually(() => sent.length === 4);
-  assert.deepEqual(sent.map(message => message.body), ['Body ru', 'Body de', 'Body pt-BR', 'Fallback']);
+  // Independent provider requests may arrive in any order across processes.
+  assert.deepEqual(sent.map(message => message.body).sort(), ['Body ru', 'Body de', 'Body pt-BR', 'Fallback'].sort());
   assert.ok(sent.every(message => !('bodyLocKey' in message)));
   guest.send('setPushDevice', { deviceId: deviceIds[0], token, foreground: false, language: '../ru' });
   await expectError(guest, 'invalid_message');
@@ -90,6 +91,7 @@ test('foreground and revoked devices are skipped; rotation replaces the previous
     if (scenario === 'rotated') await register(guest, false, `${token}-new`, id);
     notify(host, guest);
     await host.barrier();
+    if (scenario === 'rotated') await eventually(() => sent.length === 1);
     assert.deepEqual(sent.map(args => args[0]), scenario === 'rotated' ? [`${token}-new`] : []);
   }
 });

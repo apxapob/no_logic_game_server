@@ -1,0 +1,32 @@
+[
+  {
+    "time": "2026-11-01T20:55:59.414Z",
+    "event": "log.records_dropped",
+    "count": 13598
+  },
+  {
+    "time": "2026-11-01T20:55:52.070Z",
+    "event": "log.records_dropped",
+    "count": 15398
+  },
+  {
+    "time": "2026-11-01T20:56:37.315Z",
+    "event": "log.records_dropped",
+    "count": 12414
+  },
+  {
+    "time": "2026-11-01T20:56:55.535Z",
+    "event": "log.records_dropped",
+    "count": 54166
+  },
+  {
+    "time": "2026-11-01T20:57:09.123Z",
+    "event": "log.records_dropped",
+    "count": 97629
+  },
+  {
+    "time": "2026-11-01T20:56:20.211Z",
+    "event": "log.records_dropped",
+    "count": 26249
+  }
+]

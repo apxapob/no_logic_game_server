@@ -20,6 +20,7 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm audit
-      - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
-      - run: rustup default stable
+      # Keep warning-denied checks on the locally validated toolchain.
+      - run: rustup toolchain install 1.96.0 --profile minimal --component rustfmt,clippy
+      - run: rustup default 1.96.0
       - run: npm run check:rust

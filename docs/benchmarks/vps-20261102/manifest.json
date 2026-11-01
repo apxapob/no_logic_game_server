@@ -1,0 +1,77 @@
+{
+  "historicalDate": "2026-10-28",
+  "historicalThread": "01a18283-bca5-7d81-8ea0-e18e391eadf6",
+  "recoveredGeneratorSha256": "26d967a91e1e4a8b20a76af59e34e75c1b063d1ea1fc2cd966fbcad212ce5753",
+  "onlyGeneratorChanges": "ws require paths, no workload changes",
+  "adaptedGeneratorSha256": "985e3e78ab6acde03788d447bfbef6b289c1ef0b44753a3d10237736c24827b4",
+  "dateMoscow": "2026-11-02",
+  "timestamps": "UTC; runs started on 2026-11-01 UTC",
+  "adaptedGeneratorLfSha256": "9049e3f74eb839a3a1b7b408935ffad7efec17ef2edac4f7cfe1651c4741831f",
+  "target": "apxapob.com",
+  "logicalCpus": 1,
+  "ramGiBApproximate": 2.6,
+  "nodeVersion": "24.22.1",
+  "generatorNodeVersion": "26.4.0",
+  "wsVersion": "8.22.0",
+  "rustcBuildVersion": "1.99.1",
+  "localAndCiRustVersion": "1.96.0",
+  "nodeReferenceSource": "6e7d10c8bebb3bbcf5c156ed71589dcc1f93b139",
+  "nodeRelease": "20261031-persistent-dc09ddf",
+  "nodeSourceVerification": "Production src directory byte-identical to reference src; package files differ.",
+  "variants": {
+    "node-*": {
+      "runtime": "Node",
+      "release": "20261031-persistent-dc09ddf"
+    },
+    "rust-*": {
+      "runtime": "Rust",
+      "revision": "3341fea",
+      "readBufferBytes": 131072,
+      "binarySha256": "dbdd50bae3dc11d6eab673f61c0cd7fcf6745e28f689f6d136725c741aa8553e"
+    },
+    "rust-tuned-*": {
+      "runtime": "Rust",
+      "revision": "17cf3e1260f9b00d720e6c15599f33296b80186d",
+      "readBufferBytes": 16384,
+      "binarySha256": "605f9f227632db28eb69cedfa910b2a8e26da9d50e8797c8f94317c43a84c779"
+    }
+  },
+  "production": {
+    "runtime": "Rust",
+    "revision": "17cf3e1260f9b00d720e6c15599f33296b80186d",
+    "readBufferBytes": 16384,
+    "environmentUnchanged": true
+  },
+  "temporaryServer": {
+    "memoryMaxMiB": 768,
+    "nodeHeapMiB": 512,
+    "maxConnections": 8192,
+    "maxConnectionsPerIp": 8192,
+    "maxConnectionsPerMinute": 20000,
+    "maxAccounts": 20000,
+    "maxRooms": 4096,
+    "maxMessagesPerSecond": 120,
+    "sessionPersistence": false,
+    "telemetry": false,
+    "fcm": false
+  },
+  "units": {
+    "cpu": "percent of one vCPU",
+    "memoryMainTables": "peak cgroup anonymous memory, MiB; excludes file cache",
+    "latencyMainTables": "external sender to external recipient, including TLS and both network legs",
+    "hostBusy": "historical formula includes hypervisor steal; separate hostStealMean retained"
+  },
+  "files": {
+    "buffer-comparison.json": "7625e4f19d469329018d1ebd3e45d0f42178c3a1ef494685255944a93576d669",
+    "final-log-audit.json": "fecbc551b993d6597fc1c62537a9e5b71c2a3b7bcf0793029640cd974e99f039",
+    "final-smoke.jsonl": "b514052d1b9b1477732bc58496ec4a318962c7aadf1e317918937acff7711eba",
+    "final-verification.json": "9f1b359decc0b057550aa10ba52df36cc9df78f83e76502592a2e87c246e23ad",
+    "historical-summary.json": "b98182a908490b6862a65ee6a854f178e3743201805339cd3da4b398f8ef3f5d",
+    "metrics.jsonl.gz": "0e6109f1263d6d563a5d6e5a59d3c611bcbbf8300c86047904e3f5edd05bf592",
+    "network-baseline.json": "ba7c0ea4e68d7149488f3a3ce0707890d911b0c8040727c57186d21172493df6",
+    "node-log-drops.json": "196ce87d932f214f33f53eecfc1ebf9d5f9ac314cda0eec1c66a035d654b4bc7",
+    "profiles.json": "e6c407dbce7c9ad7cd309a615f9e1d709bebf587ad17a34cdc862a794e9118ab",
+    "runs.jsonl": "172c27ff2661812f604f4b6c27fa1c0519aac80d39d5081e5c69dc450d17e011",
+    "summary.json": "a26cf53e9a6707ff3b9a3a60dcd427c5e54804ce4259e7768ac092a55adbbc75"
+  }
+}

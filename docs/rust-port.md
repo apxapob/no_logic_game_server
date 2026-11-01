@@ -2,7 +2,10 @@
 
 The Rust executable is an alternative implementation on `codex/rust-server-parity`.
 The TypeScript server remains available as the reference implementation and rollback
-target. No client project is modified and no production deployment is performed.
+target. No client project is modified. The Rust relay was deployed on the existing
+VPS on 2026-11-02 (Moscow time), with the Node release retained for rollback.
+See the [VPS comparison](benchmarks/vps-rust-20261102.md) for the deployment,
+repeated historical stress test, and read-buffer measurements.
 
 ## Build and run
 
@@ -82,8 +85,9 @@ are ignored under `test-results/`. Do not publish that directory.
 
 FCM delivery is tested through a local mock provider (localization, foreground
 suppression, invalid tokens, deduplication, retry, restart and cancellation).
-Live FCM credentials/delivery and production Linux behavior have not been exercised
-locally. CI checks the implementations on Windows and Ubuntu. Telemetry retains
+Live FCM credentials/delivery have not been exercised. The deployed Linux binary
+passed the adapted suite and public WSS smoke checks; CI checks the implementations
+on Windows and Ubuntu. Telemetry retains
 the collector envelope and uses platform `rust-<os>`; it reports process RSS rather
 than inventing a JavaScript `heapUsedBytes` metric. Native tests cover queue bounds,
 retry IDs, log rotation/redaction and storage corruption/eviction.
@@ -101,6 +105,10 @@ authenticated binary frames. Each measured round trip traverses the relay twice.
 The server and load generator are separate processes. CPU and resident memory are
 sampled from the server process; results include idle and peak memory. Storage,
 push, verbose logging and telemetry are disabled equally for both servers.
+
+`COMPARE_SIZES` overrides frame sizes (comma-separated bytes). For comparisons of
+native variants, `COMPARE_NATIVE_BINARIES` accepts a JSON object mapping labels to
+absolute executable paths; `COMPARE_OUTPUT` overrides the output JSON path.
 
 Raw repetitions and machine details are in [benchmarks/rust-comparison.json](benchmarks/rust-comparison.json).
 This is a Windows loopback microbenchmark, not a maximum-player estimate or a

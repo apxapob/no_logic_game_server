@@ -4,13 +4,16 @@ const { promisify } = require('node:util');
 const { createInterface } = require('node:readline');
 const { performance } = require('node:perf_hooks');
 const { writeFileSync, mkdirSync } = require('node:fs');
-const { join } = require('node:path');
+const { join, dirname } = require('node:path');
 const WebSocket = require('ws');
 const run = promisify(execFile);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const duration = Number(process.env.COMPARE_DURATION_MS || 5000);
 const rounds = Number(process.env.COMPARE_ROUNDS || 3);
 const pairs = Number(process.env.COMPARE_PAIRS || 16);
+const nativeBinaries = process.env.COMPARE_NATIVE_BINARIES ? JSON.parse(process.env.COMPARE_NATIVE_BINARIES) : null;
+const variants = nativeBinaries ? Object.keys(nativeBinaries) : ['node', 'rust'];
+const sizes = (process.env.COMPARE_SIZES || '512,32000').split(',').map(Number);
 async function resources(pid) {
   if (process.platform === 'win32') {
     const { stdout } = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `$p=Get-Process -Id ${Number(pid)}; @{cpuMs=$p.TotalProcessorTime.TotalMilliseconds; rssBytes=$p.WorkingSet64; peakRssBytes=$p.PeakWorkingSet64; threads=$p.Threads.Count} | ConvertTo-Json -Compress`], { windowsHide: true });
@@ -25,8 +28,8 @@ async function resources(pid) {
 async function server(backend) {
   const env = { ...process.env, HOST: '127.0.0.1', PORT: '0', SESSION_DIRECTORY: '', TELEMETRY_ENABLED: 'false', FCM_ENABLED: 'false', VERBOSE_LOGS: 'false', MAX_CONNECTIONS: '1024', MAX_CONNECTIONS_PER_IP: '1024', MAX_CONNECTIONS_PER_MINUTE: '10000', MAX_MESSAGES_PER_SECOND: '100000', IDLE_TIMEOUT_MS: '120000' };
   delete env.RELAY_TEST_CONTROL;
-  const command = backend === 'node' ? process.execPath : join(__dirname, '../target/release/no-logic-game-server' + (process.platform === 'win32' ? '.exe' : ''));
-  const child = spawn(command, backend === 'node' ? [join(__dirname, 'node-process.cjs')] : [], { env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+  const command = nativeBinaries ? nativeBinaries[backend] : backend === 'node' ? process.execPath : join(__dirname, '../target/release/no-logic-game-server' + (process.platform === 'win32' ? '.exe' : ''));
+  const child = spawn(command, !nativeBinaries && backend === 'node' ? [join(__dirname, 'node-process.cjs')] : [], { env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
   child.stderr.on('data', b => process.stderr.write(b));
   const exited = new Promise(resolve => child.once('exit', resolve));
   const address = await new Promise((resolve, reject) => {
@@ -83,11 +86,12 @@ async function measure(backend, bytes, round) {
 }
 async function main() {
   const results = [];
-  for (let round = 1; round <= rounds; round++) for (const bytes of [512, 32000]) for (const backend of round % 2 ? ['node', 'rust'] : ['rust', 'node']) {
+  for (let round = 1; round <= rounds; round++) for (const bytes of sizes) for (const backend of round % 2 ? variants : [...variants].reverse()) {
     const result = await measure(backend, bytes, round); results.push(result); console.log(JSON.stringify(result));
   }
-  const report = { timestamp: new Date().toISOString(), platform: process.platform, arch: process.arch, cpu: require('node:os').cpus()[0]?.model, logicalCpus: require('node:os').cpus().length, node: process.version, methodology: 'Separate server and load processes; 1s warmup; closed-loop 16 independent 2-peer rooms; two relay hops per RTT; no storage, push or telemetry; alternating order. Windows process CPU/RSS via Get-Process. Local measurement, not a capacity guarantee.', results };
-  mkdirSync(join(__dirname, '../docs/benchmarks'), { recursive: true });
-  writeFileSync(join(__dirname, '../docs/benchmarks/rust-comparison.json'), JSON.stringify(report, null, 2) + '\n');
+  const report = { timestamp: new Date().toISOString(), platform: process.platform, arch: process.arch, cpu: require('node:os').cpus()[0]?.model, logicalCpus: require('node:os').cpus().length, node: process.version, methodology: `Separate server and load processes on one machine; 1s warmup; closed-loop ${pairs} independent 2-peer rooms; two relay hops per RTT; no storage, push or telemetry; alternating order. Process CPU/RSS via ${process.platform === 'win32' ? 'Get-Process' : '/proc'}. Loopback without TLS, not a capacity guarantee.`, results };
+  const output = process.env.COMPARE_OUTPUT || join(__dirname, '../docs/benchmarks/rust-comparison.json');
+  mkdirSync(dirname(output), { recursive: true });
+  writeFileSync(output, JSON.stringify(report, null, 2) + '\n');
 }
 main().catch(e => { console.error(e); process.exitCode = 1; });

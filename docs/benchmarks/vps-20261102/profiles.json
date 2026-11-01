@@ -1,0 +1,203 @@
+{
+  "node-realtime-no-verbose": {
+    "url": "wss://apxapob.com/__rust-comparison-3341fea/",
+    "profile": "node-realtime-no-verbose",
+    "roomSize": 4,
+    "stopP95Ms": 5000,
+    "output": "results/node-realtime-no-verbose.jsonl",
+    "levels": [
+      128,
+      256
+    ],
+    "hz": 20,
+    "stateBytes": 1024,
+    "inputBytes": 128,
+    "rampRooms": 8,
+    "rampPauseMs": 50,
+    "warmupSeconds": 5,
+    "durationSeconds": 60
+  },
+  "node-realtime": {
+    "url": "wss://apxapob.com/__rust-comparison-3341fea/",
+    "profile": "node-realtime",
+    "roomSize": 4,
+    "stopP95Ms": 5000,
+    "output": "results/node-realtime.jsonl",
+    "levels": [
+      16,
+      64,
+      128,
+      256,
+      512
+    ],
+    "hz": 20,
+    "stateBytes": 1024,
+    "inputBytes": 128,
+    "warmupSeconds": 5,
+    "durationSeconds": 45
+  },
+  "node-turn-confirm": {
+    "url": "wss://apxapob.com/__rust-comparison-3341fea/",
+    "profile": "node-turn-confirm",
+    "roomSize": 4,
+    "stopP95Ms": 5000,
+    "output": "results/node-turn-confirm.jsonl",
+    "levels": [
+      2048
+    ],
+    "hz": 0.2,
+    "stateBytes": 8192,
+    "inputBytes": 256,
+    "rampRooms": 8,
+    "rampPauseMs": 100,
+    "rampRetryLimit": 2,
+    "warmupSeconds": 10,
+    "durationSeconds": 180
+  },
+  "rust-realtime-confirm": {
+    "url": "wss://apxapob.com/__rust-comparison-3341fea/",
+    "profile": "rust-realtime-confirm",
+    "roomSize": 4,
+    "stopP95Ms": 5000,
+    "output": "results/rust-realtime-confirm.jsonl",
+    "levels": [
+      96
+    ],
+    "hz": 20,
+    "stateBytes": 1024,
+    "inputBytes": 128,
+    "rampRooms": 8,
+    "rampPauseMs": 50,
+    "warmupSeconds": 10,
+    "durationSeconds": 180
+  },
+  "rust-realtime-no-verbose": {
+    "url": "wss://apxapob.com/__rust-comparison-3341fea/",
+    "profile": "rust-realtime-no-verbose",
+    "roomSize": 4,
+    "stopP95Ms": 5000,
+    "output": "results/rust-realtime-no-verbose.jsonl",
+    "levels": [
+      128,
+      256
+    ],
+    "hz": 20,
+    "stateBytes": 1024,
+    "inputBytes": 128,
+    "rampRooms": 8,
+    "rampPauseMs": 50,
+    "warmupSeconds": 5,
+    "durationSeconds": 60
+  },
+  "rust-realtime": {
+    "url": "wss://apxapob.com/__rust-comparison-3341fea/",
+    "profile": "rust-realtime",
+    "roomSize": 4,
+    "stopP95Ms": 5000,
+    "output": "results/rust-realtime.jsonl",
+    "levels": [
+      16,
+      64,
+      128,
+      256,
+      512
+    ],
+    "hz": 20,
+    "stateBytes": 1024,
+    "inputBytes": 128,
+    "warmupSeconds": 5,
+    "durationSeconds": 45
+  },
+  "rust-tuned-realtime-confirm": {
+    "url": "wss://apxapob.com/__rust-comparison-3341fea/",
+    "profile": "rust-tuned-realtime-confirm",
+    "roomSize": 4,
+    "stopP95Ms": 5000,
+    "output": "results/rust-tuned-realtime-confirm.jsonl",
+    "levels": [
+      96
+    ],
+    "hz": 20,
+    "stateBytes": 1024,
+    "inputBytes": 128,
+    "rampRooms": 8,
+    "rampPauseMs": 50,
+    "warmupSeconds": 10,
+    "durationSeconds": 180
+  },
+  "rust-tuned-realtime-no-verbose": {
+    "url": "wss://apxapob.com/__rust-comparison-3341fea/",
+    "profile": "rust-tuned-realtime-no-verbose",
+    "roomSize": 4,
+    "stopP95Ms": 5000,
+    "output": "results/rust-tuned-realtime-no-verbose.jsonl",
+    "levels": [
+      128,
+      256
+    ],
+    "hz": 20,
+    "stateBytes": 1024,
+    "inputBytes": 128,
+    "rampRooms": 8,
+    "rampPauseMs": 50,
+    "warmupSeconds": 5,
+    "durationSeconds": 60
+  },
+  "rust-tuned-realtime": {
+    "url": "wss://apxapob.com/__rust-comparison-3341fea/",
+    "profile": "rust-tuned-realtime",
+    "roomSize": 4,
+    "stopP95Ms": 5000,
+    "output": "results/rust-tuned-realtime.jsonl",
+    "levels": [
+      16,
+      64,
+      128,
+      256,
+      512
+    ],
+    "hz": 20,
+    "stateBytes": 1024,
+    "inputBytes": 128,
+    "warmupSeconds": 5,
+    "durationSeconds": 45
+  },
+  "rust-tuned-turn-confirm": {
+    "url": "wss://apxapob.com/__rust-comparison-3341fea/",
+    "profile": "rust-tuned-turn-confirm",
+    "roomSize": 4,
+    "stopP95Ms": 5000,
+    "output": "results/rust-tuned-turn-confirm.jsonl",
+    "levels": [
+      2048
+    ],
+    "hz": 0.2,
+    "stateBytes": 8192,
+    "inputBytes": 256,
+    "rampRooms": 8,
+    "rampPauseMs": 100,
+    "rampRetryLimit": 2,
+    "warmupSeconds": 10,
+    "durationSeconds": 180
+  },
+  "rust-turn-based": {
+    "url": "wss://apxapob.com/__rust-comparison-3341fea/",
+    "profile": "rust-turn-based",
+    "roomSize": 4,
+    "stopP95Ms": 5000,
+    "output": "results/rust-turn-based.jsonl",
+    "levels": [
+      256,
+      512,
+      1024,
+      2048
+    ],
+    "hz": 0.2,
+    "stateBytes": 8192,
+    "inputBytes": 256,
+    "rampRooms": 8,
+    "rampPauseMs": 50,
+    "warmupSeconds": 10,
+    "durationSeconds": 60
+  }
+}

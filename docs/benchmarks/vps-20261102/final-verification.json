@@ -1,0 +1,27 @@
+{
+  "time": "2026-11-01T21:39:53.477530+00:00",
+  "revision": "17cf3e1260f9b00d720e6c15599f33296b80186d",
+  "binarySha256": "605f9f227632db28eb69cedfa910b2a8e26da9d50e8797c8f94317c43a84c779",
+  "pid": 111830,
+  "NRestarts": 0,
+  "productionActive": true,
+  "caddyActive": true,
+  "productionEnabled": true,
+  "health": {
+    "accounts": 1,
+    "online": 0,
+    "rooms": 0,
+    "pendingConnections": 0,
+    "status": "ok"
+  },
+  "telemetryHealthHttpStatus": 200,
+  "productionJournalErrorsSinceDeployment": 0,
+  "temporaryEndpointStatus": 404,
+  "temporaryServicesStopped": true,
+  "temporaryPortClosed": true,
+  "cleanupTimerStopped": true,
+  "caddyRestoredExactly": true,
+  "caddySha256": "508a54b7d996065189d42fc7c4569c4f7316eb955366233ebe6f20adc62bb932",
+  "productionEnvUnchanged": true,
+  "diskFreeGiB": 27.487529754638672
+}

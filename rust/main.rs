@@ -198,6 +198,9 @@ async fn connection(
     let origins = cfg.0["allowedOrigins"].clone();
     let allow = cfg.b("allowNoOrigin");
     let mut config = WebSocketConfig::default();
+    // The default 128 KiB scratch buffer is expensive with thousands of peers.
+    // This is independent of frame/message limits; larger frames still work.
+    config.read_buffer_size = 16 * 1024;
     config.max_message_size = Some(cfg.n("maxPayloadBytes"));
     config.max_frame_size = Some(cfg.n("maxPayloadBytes"));
     config.write_buffer_size = 0;

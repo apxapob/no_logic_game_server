@@ -1,18 +1,21 @@
+mod admission;
 mod config;
 mod diagnostics;
 mod model;
 mod protocol;
 mod push;
 mod server;
+mod state;
 mod store;
 mod telemetry;
+use admission::{Admission, Permit};
 use anyhow::Result;
 use config::Config;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use server::Server;
+use state::Shared;
 use std::{
-    collections::HashMap,
     sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -31,36 +34,6 @@ use tokio_tungstenite::{
         protocol::WebSocketConfig,
     },
 };
-type Command = Box<dyn FnOnce(&mut Server) + Send>;
-#[derive(Clone)]
-struct Shared {
-    state: Arc<Mutex<Server>>,
-    commands: mpsc::Sender<Command>,
-}
-impl std::ops::Deref for Shared {
-    type Target = Mutex<Server>;
-    fn deref(&self) -> &Self::Target {
-        &self.state
-    }
-}
-impl Shared {
-    fn new(server: Server) -> Self {
-        let state = Arc::new(Mutex::new(server));
-        let (commands, mut receiver) = mpsc::channel::<Command>(256);
-        let worker = state.clone();
-        std::thread::Builder::new()
-            .name("relay-state".into())
-            .spawn(move || {
-                while let Some(command) = receiver.blocking_recv() {
-                    let mut state = worker.lock().unwrap();
-                    command(&mut state);
-                    snapshot(&state);
-                }
-            })
-            .expect("state worker");
-        Self { state, commands }
-    }
-}
 struct Prefixed {
     tcp: TcpStream,
     prefix: std::io::Cursor<Vec<u8>>,
@@ -116,28 +89,12 @@ fn snapshot(s: &Server) {
     }
 }
 async fn apply(s: Shared, f: impl FnOnce(&mut Server) + Send + 'static) {
-    let _ = s.commands.send(Box::new(f)).await;
+    s.apply(f).await;
 }
-#[derive(Default)]
-struct Admission {
-    active: HashMap<String, usize>,
-    attempts: HashMap<String, (u64, usize)>,
-    total: usize,
-}
-struct Permit {
-    ip: String,
-    admission: Arc<Mutex<Admission>>,
-}
-impl Drop for Permit {
-    fn drop(&mut self) {
-        let mut a = self.admission.lock().unwrap();
-        a.total -= 1;
-        if let Some(n) = a.active.get_mut(&self.ip) {
-            *n -= 1;
-            if *n == 0 {
-                a.active.remove(&self.ip);
-            }
-        }
+async fn finish_task(mut task: tokio::task::JoinHandle<()>, grace: Duration) {
+    if tokio::time::timeout(grace, &mut task).await.is_err() {
+        task.abort();
+        let _ = task.await;
     }
 }
 #[allow(clippy::result_large_err)] // tungstenite's handshake callback fixes this error type.
@@ -179,7 +136,7 @@ async fn connection(
         let first = header.lines().next().unwrap_or("");
         let ok = first == "GET /healthz HTTP/1.1" || first == "GET /healthz HTTP/1.0";
         let body = if ok {
-            let mut v = s.lock().unwrap().stats();
+            let mut v = s.query(|s| s.stats()).await?;
             v["status"] = json!("ok");
             v.to_string()
         } else {
@@ -194,7 +151,7 @@ async fn connection(
         tcp.write_all(response.as_bytes()).await?;
         return Ok(());
     }
-    let diagnostics = s.lock().unwrap().diagnostics.clone();
+    let diagnostics = s.diagnostics.clone();
     let origins = cfg.0["allowedOrigins"].clone();
     let allow = cfg.b("allowNoOrigin");
     let mut config = WebSocketConfig::default();
@@ -276,7 +233,14 @@ async fn connection(
             },
             incoming=ws.next()=>{
                 let Some(Ok(msg))=incoming else{break};
-                if msg.is_close(){let _=ws.flush().await;break}
+                if msg.is_close(){
+                    tokio::select! {
+                        _=aborted.changed()=>{},
+                        _=shutdown.changed()=>{},
+                        _=tokio::time::timeout(Duration::from_millis(cfg.n("shutdownTimeoutMs") as u64),ws.flush())=>{}
+                    }
+                    break
+                }
                 if msg.is_ping()||msg.is_pong(){
                     // Do not poll tungstenite again until our quota check and
                     // manual control reply have replaced its automatic pong.
@@ -294,16 +258,18 @@ async fn run() -> Result<()> {
     let cfg = Config::load()?;
     let telemetry = telemetry::Telemetry::new()?;
     let server = Server::new(cfg.clone())?;
-    let s = Shared::new(server);
-    let push_sender = if s.lock().unwrap().push {
+    let notice_wake = server.notice_wake.clone();
+    let legacy_wake = server.legacy_wake.clone();
+    let push_sender = if server.push {
         Some(Arc::new(push::Sender::new().await?))
     } else {
         None
     };
+    let s = Shared::new(server);
     let listener = TcpListener::bind((cfg.s("host"), cfg.n("port") as u16)).await?;
     let address = listener.local_addr()?;
     LISTENING.store(true, Ordering::Relaxed);
-    let diagnostics = s.lock().unwrap().diagnostics.clone();
+    let diagnostics = s.diagnostics.clone();
     diagnostics.event("server started", json!({}));
     diagnostics.event(
         "server.listening",
@@ -341,7 +307,6 @@ async fn run() -> Result<()> {
     let legacy_s = s.clone();
     let mut legacy_stop = stopped.clone();
     let legacy_sender = push_sender.clone();
-    let legacy_wake = s.lock().unwrap().legacy_wake.clone();
     let legacy_task = tokio::spawn(async move {
         if let Some(sender) = legacy_sender {
             loop {
@@ -351,7 +316,6 @@ async fn run() -> Result<()> {
     });
     let push_s = s.clone();
     let mut push_stop = stopped.clone();
-    let notice_wake = s.lock().unwrap().notice_wake.clone();
     let push_task = tokio::spawn(async move {
         if let Some(sender) = push_sender {
             loop {
@@ -415,13 +379,28 @@ async fn run() -> Result<()> {
     let mut tasks = tokio::task::JoinSet::new();
     let mut cid = 0u64;
     loop {
-        tokio::select! {_=stopped.changed()=>break,Some(_)=tasks.join_next(),if !tasks.is_empty()=>{},accepted=listener.accept()=>{let(tcp,addr)=accepted?;let ip=addr.ip().to_string();let permit={let mut a=admission.lock().unwrap();let t=model::now();a.attempts.retain(|_,(at,_)|t.saturating_sub(*at)<60000);let count=a.attempts.len();let entry=a.attempts.entry(ip.clone()).or_insert((t,0));entry.1=entry.1.saturating_add(1);let attempts=entry.1;if count>=cfg.n("maxConnections")*4||attempts>cfg.n("maxConnectionsPerMinute")||a.total>=cfg.n("maxConnections")||a.active.get(&ip).copied().unwrap_or(0)>=cfg.n("maxConnectionsPerIp"){None}else{a.total+=1;*a.active.entry(ip.clone()).or_default()+=1;Some(Permit{ip,admission:admission.clone()})}};if let Some(permit)=permit{cid+=1;tasks.spawn(connection(tcp,cid,s.clone(),cfg.clone(),stopped.clone(),permit));}}}
+        tokio::select! {
+            _ = stopped.changed() => break,
+            Some(_) = tasks.join_next(), if !tasks.is_empty() => {},
+            accepted = listener.accept() => {
+                let (tcp, addr) = accepted?;
+                if let Some(permit) = Admission::acquire(&admission, addr.ip().to_string(), &cfg) {
+                    cid += 1;
+                    tasks.spawn(connection(tcp, cid, s.clone(), cfg.clone(), stopped.clone(), permit));
+                }
+            }
+        }
     }
     drop(listener);
     let _ = sweep.await;
-    push_task.abort();
-    legacy_task.abort();
-    let _ = telemetry_task.await;
+    // Let an acknowledged push persist its delivery receipt before shutdown.
+    // Slow providers/collectors still cannot hold the process indefinitely.
+    let grace = Duration::from_millis(cfg.n("shutdownTimeoutMs") as u64);
+    tokio::join!(
+        finish_task(push_task, grace),
+        finish_task(legacy_task, grace),
+        finish_task(telemetry_task, grace),
+    );
     let _ = tokio::time::timeout(
         Duration::from_millis(cfg.n("shutdownTimeoutMs") as u64),
         async { while tasks.join_next().await.is_some() {} },

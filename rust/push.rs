@@ -15,32 +15,35 @@ pub struct Sender {
 }
 impl Sender {
     pub async fn deliver_legacy(&self, state: Shared) {
-        let jobs = {
-            let mut s = state.lock().unwrap();
-            std::mem::take(&mut s.legacy_pushes)
-        };
+        let jobs = state
+            .query(|s| std::mem::take(&mut s.legacy_pushes))
+            .await
+            .unwrap_or_default();
         futures_util::future::join_all(jobs.into_iter().map(|job| {
             let state = state.clone();
             async move {
                 let result = self.send(&job.token, &job.notice).await;
-                let mut s = state.lock().unwrap();
-                s.pushes_in_flight = s.pushes_in_flight.saturating_sub(1);
-                if matches!(result, Ok(false))
-                    && let Some(p) = s.players.get_mut(&job.player)
-                    && p.devices
-                        .get(&job.device)
-                        .is_some_and(|d| d["token"] == job.token)
-                {
-                    p.devices.shift_remove(&job.device);
-                }
-                s.diagnostics.event(
-                    if result.is_ok() {
-                        "push.delivery"
-                    } else {
-                        "push.delivery_failed"
-                    },
-                    json!({}),
-                );
+                let _ = state
+                    .query(move |s| {
+                        s.pushes_in_flight = s.pushes_in_flight.saturating_sub(1);
+                        if matches!(result, Ok(false))
+                            && let Some(p) = s.players.get_mut(&job.player)
+                            && p.devices
+                                .get(&job.device)
+                                .is_some_and(|d| d["token"] == job.token)
+                        {
+                            p.devices.shift_remove(&job.device);
+                        }
+                        s.diagnostics.event(
+                            if result.is_ok() {
+                                "push.delivery"
+                            } else {
+                                "push.delivery_failed"
+                            },
+                            json!({}),
+                        );
+                    })
+                    .await;
             }
         }))
         .await;
@@ -105,41 +108,41 @@ impl Sender {
     }
     pub async fn deliver(&self, state: Shared) {
         let s = state.clone();
-        let due = tokio::task::spawn_blocking(move || {
-            let s = s.lock().unwrap();
-            let t = now();
-            s.store
-                .jobs
-                .iter()
-                .flat_map(|(id, jobs)| {
-                    jobs.iter()
-                        .filter(move |j| {
-                            j["at"].as_u64().unwrap_or(0) <= t
-                                && j["retryAt"].as_u64().unwrap_or(0) <= t
-                        })
-                        .map(|j| (id.clone(), j.clone()))
-                })
-                .collect::<Vec<_>>()
-        })
-        .await
-        .unwrap_or_default();
+        let due = s
+            .query(move |s| {
+                let t = now();
+                s.store
+                    .jobs
+                    .iter()
+                    .flat_map(|(id, jobs)| {
+                        jobs.iter()
+                            .filter(move |j| {
+                                j["at"].as_u64().unwrap_or(0) <= t
+                                    && j["retryAt"].as_u64().unwrap_or(0) <= t
+                            })
+                            .map(|j| (id.clone(), j.clone()))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .await
+            .unwrap_or_default();
         for (room, job) in due {
             let mut failed = false;
             let targets = job["to"].as_array().cloned().unwrap_or_default();
             for id in targets {
                 let Some(id) = id.as_str() else { continue };
                 let (s, player) = (state.clone(), id.to_owned());
-                let devices = tokio::task::spawn_blocking(move || {
-                    let s = s.lock().unwrap();
-                    s.players
-                        .get(&player)
-                        .cloned()
-                        .or_else(|| s.store.account(&player).ok().flatten())
-                        .map(|p| (p.connection.is_some(), p.room, p.devices))
-                })
-                .await
-                .ok()
-                .flatten();
+                let devices = s
+                    .query(move |s| {
+                        s.players
+                            .get(&player)
+                            .cloned()
+                            .or_else(|| s.store.account(&player).ok().flatten())
+                            .map(|p| (p.connection.is_some(), p.room, p.devices))
+                    })
+                    .await
+                    .ok()
+                    .flatten();
                 let Some((online, current, devices)) = devices else {
                     continue;
                 };
@@ -151,13 +154,18 @@ impl Sender {
                     {
                         continue;
                     }
-                    let still_current = {
-                        let s = state.lock().unwrap();
-                        s.store.jobs.get(&room).is_some_and(|a| {
-                            a.iter()
-                                .any(|j| j["eventId"] == job["eventId"] && j["at"] == job["at"])
+                    let (check_room, check_job) = (room.clone(), job.clone());
+                    let still_current = state
+                        .query(move |s| {
+                            s.store.jobs.get(&check_room).is_some_and(|a| {
+                                a.iter().any(|j| {
+                                    j["eventId"] == check_job["eventId"]
+                                        && j["at"] == check_job["at"]
+                                })
+                            })
                         })
-                    };
+                        .await
+                        .unwrap_or(false);
                     if !still_current {
                         break;
                     }
@@ -189,67 +197,68 @@ impl Sender {
                     );
                     let invalid = matches!(result, Ok(false));
                     let token = device["token"].clone();
-                    let _ = tokio::task::spawn_blocking(move || {
-                        let mut s = s.lock().unwrap();
-                        if invalid {
-                            let mut p = s
-                                .players
-                                .get(&id)
-                                .cloned()
-                                .or_else(|| s.store.account(&id).ok().flatten());
-                            if let Some(p) = p.as_mut()
-                                && p.devices
-                                    .get(&device_id)
-                                    .is_some_and(|d| d["token"] == token)
-                            {
-                                p.devices.shift_remove(&device_id);
-                                let _ = s.store.save_account(p);
-                                if s.players.contains_key(&id) {
-                                    s.players.insert(id.clone(), p.clone());
+                    let _ = s
+                        .query(move |s| {
+                            if invalid {
+                                let mut p = s
+                                    .players
+                                    .get(&id)
+                                    .cloned()
+                                    .or_else(|| s.store.account(&id).ok().flatten());
+                                if let Some(p) = p.as_mut()
+                                    && p.devices
+                                        .get(&device_id)
+                                        .is_some_and(|d| d["token"] == token)
+                                {
+                                    p.devices.shift_remove(&device_id);
+                                    let _ = s.store.save_account(p);
+                                    if s.players.contains_key(&id) {
+                                        s.players.insert(id.clone(), p.clone());
+                                    }
                                 }
                             }
-                        }
-                        if let Some(j) = s.store.jobs.get_mut(&room).and_then(|a| {
-                            a.iter_mut()
-                                .find(|j| j["eventId"] == job["eventId"] && j["at"] == job["at"])
-                        }) && let Some(done) = j["done"].as_array_mut()
-                        {
-                            done.push(json!(key));
-                        }
-                    })
-                    .await;
+                            if let Some(j) = s.store.jobs.get_mut(&room).and_then(|a| {
+                                a.iter_mut().find(|j| {
+                                    j["eventId"] == job["eventId"] && j["at"] == job["at"]
+                                })
+                            }) && let Some(done) = j["done"].as_array_mut()
+                            {
+                                done.push(json!(key));
+                            }
+                        })
+                        .await;
                 }
             }
             let s = state.clone();
-            let _ = tokio::task::spawn_blocking(move || {
-                let mut s = s.lock().unwrap();
-                let Some(mut jobs) = s.store.jobs.get(&room).cloned() else {
-                    return;
-                };
-                let Some(index) = jobs
-                    .iter()
-                    .position(|j| j["eventId"] == job["eventId"] && j["at"] == job["at"])
-                else {
-                    return;
-                };
-                if !failed && job["scheduled"] != true {
-                    jobs.remove(index);
-                } else {
-                    jobs[index]["retryAt"] = json!(if failed {
-                        now() + 30000
+            let _ = s
+                .query(move |s| {
+                    let Some(mut jobs) = s.store.jobs.get(&room).cloned() else {
+                        return;
+                    };
+                    let Some(index) = jobs
+                        .iter()
+                        .position(|j| j["eventId"] == job["eventId"] && j["at"] == job["at"])
+                    else {
+                        return;
+                    };
+                    if !failed && job["scheduled"] != true {
+                        jobs.remove(index);
                     } else {
-                        9007199254740991
-                    });
-                }
-                if s.store.enabled {
-                    let _ = s.store.set_jobs(&room, jobs);
-                } else if jobs.is_empty() {
-                    s.store.jobs.shift_remove(&room);
-                } else {
-                    s.store.jobs.insert(room, jobs);
-                }
-            })
-            .await;
+                        jobs[index]["retryAt"] = json!(if failed {
+                            now() + 30000
+                        } else {
+                            9007199254740991
+                        });
+                    }
+                    if s.store.enabled {
+                        let _ = s.store.set_jobs(&room, jobs);
+                    } else if jobs.is_empty() {
+                        s.store.jobs.shift_remove(&room);
+                    } else {
+                        s.store.jobs.insert(room, jobs);
+                    }
+                })
+                .await;
         }
     }
 }

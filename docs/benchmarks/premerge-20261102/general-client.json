@@ -1,0 +1,93 @@
+{
+  "clients": 3,
+  "turns": 3,
+  "hostMigration": true,
+  "rejoin": true,
+  "checkpoints": [
+    {
+      "label": "initial world",
+      "year": 1,
+      "hash": "06323e92a123b0f952a7cf1d8cffe0ef49f9631a11f3a3578a8f4fe6f270fa99",
+      "players": [
+        "A",
+        "B",
+        "C"
+      ],
+      "winner": 0,
+      "status": "playing",
+      "defeated": [],
+      "errors": 0
+    },
+    {
+      "label": "turn 1",
+      "year": 2,
+      "hash": "82dd76e3d5a0ff341593b57d89f57c4e96d815b4b749ff60e275f6454249e261",
+      "players": [
+        "A",
+        "B",
+        "C"
+      ],
+      "winner": 0,
+      "status": "playing",
+      "defeated": [],
+      "errors": 0
+    },
+    {
+      "label": "turn 2",
+      "year": 3,
+      "hash": "cc95820bcd7d7735e6466a1d814648b1a0f3620e9317a0cca75115c4894850a4",
+      "players": [
+        "A",
+        "B",
+        "C"
+      ],
+      "winner": 0,
+      "status": "playing",
+      "defeated": [],
+      "errors": 0
+    },
+    {
+      "label": "turn 3",
+      "year": 4,
+      "hash": "68ac4b5b3dec173236412f16a4846b3abc67eea5802b3f939ff8a7011ad713fc",
+      "players": [
+        "A",
+        "B",
+        "C"
+      ],
+      "winner": 0,
+      "status": "playing",
+      "defeated": [],
+      "errors": 0
+    },
+    {
+      "label": "host departed",
+      "year": 4,
+      "hash": "68ac4b5b3dec173236412f16a4846b3abc67eea5802b3f939ff8a7011ad713fc",
+      "players": [
+        "B",
+        "C"
+      ],
+      "winner": 0,
+      "status": "playing",
+      "defeated": [],
+      "errors": 0
+    },
+    {
+      "label": "former host rejoined",
+      "year": 4,
+      "hash": "68ac4b5b3dec173236412f16a4846b3abc67eea5802b3f939ff8a7011ad713fc",
+      "players": [
+        "A",
+        "B",
+        "C"
+      ],
+      "winner": 0,
+      "status": "playing",
+      "defeated": [],
+      "errors": 0
+    }
+  ],
+  "errors": 0,
+  "binarySha256": "8344bdf3f676d50b24302057e9f67fb10c87e22f1679bda331e7a6b0d5707148"
+}

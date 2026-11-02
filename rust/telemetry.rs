@@ -117,19 +117,27 @@ impl Telemetry {
     }
     pub async fn sample(&mut self, s: Shared) {
         let t = now();
-        let mut stats = {
-            let s = s.lock().unwrap();
-            for error in s.diagnostics.errors.lock().unwrap().drain(..) {
-                self.capture(error["name"].as_str().unwrap_or("server.fatal"));
-            }
-            let mut activity = s.diagnostics.activity.lock().unwrap();
-            if activity.as_object().is_some_and(|a| !a.is_empty()) {
-                let mut data = std::mem::replace(&mut *activity, json!({}));
-                data["windowMs"] = json!(t.saturating_sub(self.window));
-                self.enqueue("server.activity", data)
-            }
-            s.stats()
+        let Ok((mut stats, errors, mut activity)) = s
+            .query(|s| {
+                let errors = std::mem::take(&mut *s.diagnostics.errors.lock().unwrap());
+                let mut activity = s.diagnostics.activity.lock().unwrap();
+                (
+                    s.stats(),
+                    errors,
+                    std::mem::replace(&mut *activity, json!({})),
+                )
+            })
+            .await
+        else {
+            return;
         };
+        for error in errors {
+            self.capture(error["name"].as_str().unwrap_or("server.fatal"));
+        }
+        if activity.as_object().is_some_and(|a| !a.is_empty()) {
+            activity["windowMs"] = json!(t.saturating_sub(self.window));
+            self.enqueue("server.activity", activity)
+        }
         self.window = t;
         stats["rssBytes"] = json!(
             memory_stats::memory_stats()

@@ -8,7 +8,7 @@ use std::{
     sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
-        mpsc::{SyncSender, sync_channel},
+        mpsc::{SyncSender, TrySendError, sync_channel},
     },
 };
 #[derive(Clone)]
@@ -201,11 +201,30 @@ impl Diagnostics {
         }
     }
     pub fn flush(&self) {
+        self.flush_with_timeout(std::time::Duration::from_secs(2));
+    }
+    fn flush_with_timeout(&self, timeout: std::time::Duration) {
         if let Some(tx) = &self.tx {
+            let deadline = std::time::Instant::now() + timeout;
             let (done, finished) = std::sync::mpsc::channel();
-            if tx.send(LogEntry::Flush(done)).is_ok() {
-                let _ = finished.recv_timeout(std::time::Duration::from_secs(2));
+            let mut entry = LogEntry::Flush(done);
+            loop {
+                match tx.try_send(entry) {
+                    Ok(()) => break,
+                    Err(TrySendError::Disconnected(_)) => return,
+                    Err(TrySendError::Full(pending)) => {
+                        let remaining =
+                            deadline.saturating_duration_since(std::time::Instant::now());
+                        if remaining.is_zero() {
+                            return;
+                        }
+                        entry = pending;
+                        std::thread::sleep(remaining.min(std::time::Duration::from_millis(1)));
+                    }
+                }
             }
+            let _ = finished
+                .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()));
         }
     }
 }
@@ -306,6 +325,20 @@ impl Logger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shutdown_flush_is_bounded_even_when_the_log_queue_is_full() {
+        let mut config = Config::load().unwrap();
+        config.0["verboseLogs"] = json!(false);
+        let mut diagnostics = Diagnostics::new(&config);
+        let (tx, rx) = sync_channel(1);
+        tx.try_send(LogEntry::Line("stalled writer".into()))
+            .unwrap();
+        diagnostics.tx = Some(tx);
+        let started = std::time::Instant::now();
+        diagnostics.flush_with_timeout(std::time::Duration::from_millis(20));
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert!(matches!(rx.try_recv(), Ok(LogEntry::Line(_))));
+    }
     #[test]
     fn rotation_keeps_whole_unicode_records_and_respects_total_across_restart() {
         let dir = std::env::temp_dir().join(format!("rust-relay-logs-{}", crate::model::id()));

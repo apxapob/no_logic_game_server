@@ -1,12 +1,11 @@
 'use strict';
-const { spawn, execFile } = require('node:child_process');
-const { promisify } = require('node:util');
+const { spawn } = require('node:child_process');
 const { createInterface } = require('node:readline');
 const { performance } = require('node:perf_hooks');
 const { writeFileSync, mkdirSync } = require('node:fs');
 const { join, dirname } = require('node:path');
 const WebSocket = require('ws');
-const run = promisify(execFile);
+const resources = require('./process-resources.cjs');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const duration = Number(process.env.COMPARE_DURATION_MS || 5000);
 const rounds = Number(process.env.COMPARE_ROUNDS || 3);
@@ -14,17 +13,8 @@ const pairs = Number(process.env.COMPARE_PAIRS || 16);
 const nativeBinaries = process.env.COMPARE_NATIVE_BINARIES ? JSON.parse(process.env.COMPARE_NATIVE_BINARIES) : null;
 const variants = nativeBinaries ? Object.keys(nativeBinaries) : ['node', 'rust'];
 const sizes = (process.env.COMPARE_SIZES || '512,32000').split(',').map(Number);
-async function resources(pid) {
-  if (process.platform === 'win32') {
-    const { stdout } = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `$p=Get-Process -Id ${Number(pid)}; @{cpuMs=$p.TotalProcessorTime.TotalMilliseconds; rssBytes=$p.WorkingSet64; peakRssBytes=$p.PeakWorkingSet64; threads=$p.Threads.Count} | ConvertTo-Json -Compress`], { windowsHide: true });
-    return JSON.parse(stdout);
-  }
-  const fs = require('node:fs');
-  const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8').split(' ');
-  const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
-  const hz = Number((await run('getconf', ['CLK_TCK'])).stdout.trim());
-  return { cpuMs: (Number(stat[13]) + Number(stat[14])) * 1000 / hz, rssBytes: Number(/VmRSS:\s+(\d+)/.exec(status)[1]) * 1024, peakRssBytes: Number(/VmHWM:\s+(\d+)/.exec(status)[1]) * 1024, threads: Number(/Threads:\s+(\d+)/.exec(status)[1]) };
-}
+const protocol = process.env.COMPARE_PROTOCOL || 'binary';
+if (!['binary', 'json'].includes(protocol)) throw new Error('COMPARE_PROTOCOL must be binary or json');
 async function server(backend) {
   const env = { ...process.env, HOST: '127.0.0.1', PORT: '0', SESSION_DIRECTORY: '', TELEMETRY_ENABLED: 'false', FCM_ENABLED: 'false', VERBOSE_LOGS: 'false', MAX_CONNECTIONS: '1024', MAX_CONNECTIONS_PER_IP: '1024', MAX_CONNECTIONS_PER_MINUTE: '10000', MAX_MESSAGES_PER_SECOND: '100000', IDLE_TIMEOUT_MS: '120000' };
   delete env.RELAY_TEST_CONTROL;
@@ -40,7 +30,7 @@ async function server(backend) {
 }
 async function client(url) {
   const ws = new WebSocket(url); const queue = [], waiters = [];
-  const c = { ws, failed: null, onBinary: () => {}, send: (method, data) => ws.send(JSON.stringify({ method, data })), wait: method => new Promise((resolve, reject) => {
+  const c = { ws, failed: null, onBinary: () => {}, onRelay: () => {}, send: (method, data) => ws.send(JSON.stringify({ method, data })), wait: method => new Promise((resolve, reject) => {
     const i = queue.findIndex(v => v.method === method); if (i >= 0) return resolve(queue.splice(i, 1)[0]);
     const timer = setTimeout(() => reject(new Error('Timed out: ' + method)), 5000);
     waiters.push({ method, resolve: v => { clearTimeout(timer); resolve(v); } });
@@ -50,6 +40,7 @@ async function client(url) {
     if (binary) return c.onBinary(b);
     const v = JSON.parse(b);
     if (v.method === 'Ping') return c.send('Pong', v.data);
+    if (v.method === 'messageFromPlayer') return c.onRelay(v.data.msg);
     if (v.method === 'error') c.failed = new Error(v.data.code);
     const i = waiters.findIndex(w => w.method === v.method); if (i >= 0) waiters.splice(i, 1)[0].resolve(v); else queue.push(v);
   });
@@ -60,7 +51,20 @@ async function client(url) {
 async function measure(backend, bytes, round) {
   const instance = await server(backend), clients = [], senders = [];
   let measuring = false, active = true, received = 0, latencies = [], pending = 0;
-  const send = c => { const b = Buffer.alloc(bytes); b[0] = 1; b.writeDoubleBE(performance.now(), 17); pending++; c.ws.send(b); };
+  const padding = 'x'.repeat(Math.max(0, bytes - 100));
+  const send = c => {
+    pending++;
+    if (protocol === 'json') c.send('sendToRoom', { time: performance.now(), padding });
+    else { const b = Buffer.alloc(bytes); b[0] = 1; b.writeDoubleBE(performance.now(), 17); c.ws.send(b); }
+  };
+  const drain = async () => {
+    const deadline = performance.now() + 10000;
+    while (pending) {
+      for (const c of clients) if (c.failed) throw c.failed;
+      if (performance.now() > deadline) throw new Error('Relay benchmark drain timed out');
+      await sleep(1);
+    }
+  };
   try {
     const idle = await resources(instance.child.pid);
     for (let i = 0; i < pairs; i++) {
@@ -68,20 +72,23 @@ async function measure(backend, bytes, round) {
       a.send('createRoom', { name: 'Benchmark', maxPlayers: 2, binaryRelay: true }); const room = (await a.wait('onRoomEnter')).data;
       b.send('enterRoom', { roomId: room.roomId }); await b.wait('onRoomEnter');
       b.onBinary = bytes => b.ws.send(bytes); // authenticated sender header is the return target
-      a.onBinary = bytes => { pending--; if (measuring) { received++; latencies.push(performance.now() - bytes.readDoubleBE(17)); } if (active) send(a); };
+      b.onRelay = message => b.send('sendToRoom', message);
+      const returned = time => { pending--; if (measuring) { received++; latencies.push(performance.now() - time); } if (active) send(a); };
+      a.onBinary = bytes => returned(bytes.readDoubleBE(17));
+      a.onRelay = message => returned(message.time);
     }
     for (const c of senders) send(c);
-    await sleep(1000); active = false; while (pending) await sleep(1);
+    await sleep(1000); active = false; await drain();
     const before = await resources(instance.child.pid);
     active = true; measuring = true; const start = performance.now();
     for (const c of senders) send(c);
-    await sleep(duration); active = false; while (pending) await sleep(1);
+    await sleep(duration); active = false; await drain();
     const elapsed = performance.now() - start; measuring = false;
     const after = await resources(instance.child.pid);
     for (const c of clients) if (c.failed) throw c.failed;
     latencies.sort((a, b) => a - b);
     const p = q => latencies[Math.min(latencies.length - 1, Math.floor(q * latencies.length))];
-    return { backend, round, bytes, pairs, clients: clients.length, elapsedMs: elapsed, roundTrips: received, roundTripsPerSecond: received * 1000 / elapsed, relayMessagesPerSecond: received * 2000 / elapsed, latencyMs: { p50: p(0.5), p95: p(0.95), p99: p(0.99) }, cpuMs: after.cpuMs - before.cpuMs, cpuMsPer1000RoundTrips: (after.cpuMs - before.cpuMs) * 1000 / received, idleRssBytes: idle.rssBytes, rssBytes: after.rssBytes, peakRssBytes: after.peakRssBytes, threads: after.threads };
+    return { backend, round, protocol, bytes, pairs, clients: clients.length, elapsedMs: elapsed, roundTrips: received, roundTripsPerSecond: received * 1000 / elapsed, relayMessagesPerSecond: received * 2000 / elapsed, latencyMs: { p50: p(0.5), p95: p(0.95), p99: p(0.99) }, cpuMs: after.cpuMs - before.cpuMs, cpuMsPer1000RoundTrips: (after.cpuMs - before.cpuMs) * 1000 / received, idleRssBytes: idle.rssBytes, rssBytes: after.rssBytes, peakRssBytes: after.peakRssBytes, threads: after.threads };
   } finally { active = false; for (const c of clients) c.ws.terminate(); await instance.stop(); }
 }
 async function main() {

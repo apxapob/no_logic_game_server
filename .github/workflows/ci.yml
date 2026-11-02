@@ -24,3 +24,11 @@ jobs:
       - run: rustup toolchain install 1.96.0 --profile minimal --component rustfmt,clippy
       - run: rustup default 1.96.0
       - run: npm run check:rust
+      - name: Check connection and session cleanup
+        run: node scripts/memory-churn.cjs
+        env:
+          RUST_SERVER_BINARY: target/debug/no-logic-game-server${{ runner.os == 'Windows' && '.exe' || '' }}
+          CHURN_CYCLES: '3'
+          CHURN_CLIENTS: '16'
+          CHURN_STATE_BYTES: '65536'
+          CHURN_OUTPUT: test-results/ci-memory.json

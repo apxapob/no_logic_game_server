@@ -6,6 +6,8 @@ target. No client project is modified. The Rust relay was deployed on the existi
 VPS on 2026-11-02 (Moscow time), with the Node release retained for rollback.
 See the [VPS comparison](benchmarks/vps-rust-20261102.md) for the deployment,
 repeated historical stress test, and read-buffer measurements.
+The [pre-merge review](rust-premerge-review.md) records subsequent fixes,
+local before/after measurements and connection/session cleanup checks.
 
 ## Build and run
 
@@ -34,6 +36,9 @@ disk save; this is intentionally unchanged.
 
 Tokio handles sockets independently. A dedicated `relay-state` thread owns ordered
 state transitions, including disk operations, behind a bounded 256-command queue.
+Health, push and telemetry tasks query that same owner asynchronously; they do not
+take a blocking mutex around the server. A slow state operation still delays queued
+commands, but does not hold the Tokio executor thread.
 Each connection has a byte-bounded output queue; saturation aborts the connection,
 including when its socket writer is blocked. Queued room messages retain their
 membership generation and cannot migrate into a new room after reconnect.
@@ -48,6 +53,9 @@ parallel room simulation or promise linear scaling with CPU cores. Storage no
 longer blocks the socket runtime, but a slow storage operation can still delay
 protocol commands waiting on the state worker. Large game states consume their
 actual byte size in either implementation; language changes do not compress them.
+Session limits are per room, not a global RAM budget. `SESSION_MAX_BYTES` limits
+stored room files and is not a process memory limit. Pending persistent push jobs
+also need a separate backlog policy if delivery remains unavailable for a long time.
 
 ## Compatibility checks
 
@@ -55,6 +63,7 @@ actual byte size in either implementation; language changes do not compress them
 npm run check        # Reference Node typecheck, lint and tests
 npm run check:rust   # Rust formatting, clippy, native tests and adapted suite
 node scripts/general-client-smoke.mjs
+node scripts/memory-churn.cjs # Local release binary; repeated connect/save/disconnect
 ```
 
 The JS harness uses `RELAY_BACKEND=rust` to launch a Rust process instead of the
@@ -109,6 +118,19 @@ push, verbose logging and telemetry are disabled equally for both servers.
 `COMPARE_SIZES` overrides frame sizes (comma-separated bytes). For comparisons of
 native variants, `COMPARE_NATIVE_BINARIES` accepts a JSON object mapping labels to
 absolute executable paths; `COMPARE_OUTPUT` overrides the output JSON path.
+`COMPARE_PROTOCOL=json` exercises JSON relay instead; the default is `binary`.
+JSON sizes are approximate input targets (padding plus timestamp/envelope), whereas
+binary sizes specify the exact input frame length.
+
+The cleanup runner defaults to 30 cycles of 64 clients with 128 KiB committed state
+and a 256 KiB unfinished upload per room. `CHURN_CYCLES`, `CHURN_CLIENTS` (multiple
+of four), `CHURN_STATE_BYTES`, `CHURN_DELAY_MS`, `CHURN_OUTPUT`, and
+`RUST_SERVER_BINARY` override these settings. It creates a private temporary session
+directory alongside the report, only connects to its own loopback server, and
+requires all live health counters to return to zero after each cycle. Resource
+samples include RSS, private committed bytes on Windows (anonymous RSS on Linux),
+handles/file descriptors and threads. CI runs a short lifecycle scenario on both
+platforms; it does not assert a machine-dependent RSS threshold.
 
 Raw repetitions and machine details are in [benchmarks/rust-comparison.json](benchmarks/rust-comparison.json).
 This is a Windows loopback microbenchmark, not a maximum-player estimate or a
@@ -135,7 +157,7 @@ fell 6.9%, with 22.1% more CPU per operation. Large-frame throughput was similar
 CPU per operation. These measurements **do not establish a general speedup**.
 They establish a substantial memory saving and workload-dependent CPU efficiency.
 
-Validation at completion: the reference suite passed 128 tests (4 skips); the
+Validation at initial port completion: the reference suite passed 128 tests (4 skips); the
 adapted suite passed 129 tests (3 skips); 8 native Rust tests passed. Formatting,
 Clippy with warnings denied, TypeScript checking and ESLint passed. See the coverage
 qualification above: shared-suite totals include reference JS-only unit tests.

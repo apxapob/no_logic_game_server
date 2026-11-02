@@ -1,0 +1,806 @@
+{
+  "timestamp": "2026-11-02T07:47:01.395Z",
+  "platform": "win32",
+  "node": "v26.4.0",
+  "executable": "target/release/no-logic-game-server.exe",
+  "binarySha256": "8344bdf3f676d50b24302057e9f67fb10c87e22f1679bda331e7a6b0d5707148",
+  "cycles": 30,
+  "clientsPerCycle": 64,
+  "connectionsCreated": 1920,
+  "stateBytesPerRoom": 131072,
+  "partialUploadBytesPerRoom": 262144,
+  "delayMs": 0,
+  "accountTtlMs": 300,
+  "sessionDiskQuotaBytes": 8388608,
+  "methodology": "One server process; repeated rooms, persisted states, unfinished uploads, normal leave and abrupt close; all live health counters must return to zero after TTL. Windows private committed bytes / Linux anonymous RSS; RSS alone may retain allocator high-water memory. This is a churn check, not proof that every execution is leak-free.",
+  "baseline": {
+    "threads": 7,
+    "cpuMs": 15.625,
+    "handles": 117,
+    "peakRssBytes": 7352320,
+    "privateBytes": 1634304,
+    "rssBytes": 7352320
+  },
+  "rounds": [
+    {
+      "cycle": 1,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 109.375,
+        "handles": 185,
+        "peakRssBytes": 17756160,
+        "privateBytes": 11173888,
+        "rssBytes": 17756160
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 156.25,
+        "handles": 119,
+        "peakRssBytes": 17788928,
+        "privateBytes": 3637248,
+        "rssBytes": 9437184
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 2,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 218.75,
+        "handles": 185,
+        "peakRssBytes": 18325504,
+        "privateBytes": 11808768,
+        "rssBytes": 18325504
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 218.75,
+        "handles": 119,
+        "peakRssBytes": 18325504,
+        "privateBytes": 3313664,
+        "rssBytes": 9367552
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 3,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 359.375,
+        "handles": 185,
+        "peakRssBytes": 18386944,
+        "privateBytes": 11939840,
+        "rssBytes": 18386944
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 421.875,
+        "handles": 119,
+        "peakRssBytes": 18386944,
+        "privateBytes": 2473984,
+        "rssBytes": 9175040
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 4,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 484.375,
+        "handles": 185,
+        "peakRssBytes": 18386944,
+        "privateBytes": 11767808,
+        "rssBytes": 18259968
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 531.25,
+        "handles": 119,
+        "peakRssBytes": 18386944,
+        "privateBytes": 2883584,
+        "rssBytes": 9310208
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 5,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 656.25,
+        "handles": 185,
+        "peakRssBytes": 18386944,
+        "privateBytes": 11599872,
+        "rssBytes": 18243584
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 734.375,
+        "handles": 119,
+        "peakRssBytes": 18386944,
+        "privateBytes": 3956736,
+        "rssBytes": 9330688
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 6,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 828.125,
+        "handles": 185,
+        "peakRssBytes": 18386944,
+        "privateBytes": 11915264,
+        "rssBytes": 18386944
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 906.25,
+        "handles": 119,
+        "peakRssBytes": 18386944,
+        "privateBytes": 2899968,
+        "rssBytes": 9490432
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 7,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 1000,
+        "handles": 185,
+        "peakRssBytes": 18509824,
+        "privateBytes": 12013568,
+        "rssBytes": 18509824
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 1109.375,
+        "handles": 119,
+        "peakRssBytes": 18509824,
+        "privateBytes": 2899968,
+        "rssBytes": 9261056
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 8,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 1156.25,
+        "handles": 185,
+        "peakRssBytes": 18509824,
+        "privateBytes": 11743232,
+        "rssBytes": 18227200
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 1234.375,
+        "handles": 119,
+        "peakRssBytes": 18509824,
+        "privateBytes": 3321856,
+        "rssBytes": 9428992
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 9,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 1265.625,
+        "handles": 185,
+        "peakRssBytes": 18509824,
+        "privateBytes": 11825152,
+        "rssBytes": 18329600
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 1312.5,
+        "handles": 119,
+        "peakRssBytes": 18509824,
+        "privateBytes": 4599808,
+        "rssBytes": 9351168
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 10,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 1390.625,
+        "handles": 185,
+        "peakRssBytes": 18509824,
+        "privateBytes": 11960320,
+        "rssBytes": 18497536
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 1484.375,
+        "handles": 119,
+        "peakRssBytes": 18509824,
+        "privateBytes": 3911680,
+        "rssBytes": 9617408
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 11,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 1593.75,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 12230656,
+        "rssBytes": 18554880
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 1718.75,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 4952064,
+        "rssBytes": 9433088
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 12,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 1859.375,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 12201984,
+        "rssBytes": 18419712
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 1906.25,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 3465216,
+        "rssBytes": 9596928
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 13,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 2015.625,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 12230656,
+        "rssBytes": 18444288
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 2125,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 2834432,
+        "rssBytes": 9437184
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 14,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 2250,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 11988992,
+        "rssBytes": 18444288
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 2265.625,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 3231744,
+        "rssBytes": 9515008
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 15,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 2328.125,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 12029952,
+        "rssBytes": 18436096
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 2453.125,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 3158016,
+        "rssBytes": 9441280
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 16,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 2546.875,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 11710464,
+        "rssBytes": 18374656
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 2640.625,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 3784704,
+        "rssBytes": 9527296
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 17,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 2734.375,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 11976704,
+        "rssBytes": 18411520
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 2843.75,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 2891776,
+        "rssBytes": 9592832
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 18,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 2953.125,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 12201984,
+        "rssBytes": 18444288
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 2984.375,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 3436544,
+        "rssBytes": 9572352
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 19,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 3078.125,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 11890688,
+        "rssBytes": 18427904
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 3218.75,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 3231744,
+        "rssBytes": 9412608
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 20,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 3296.875,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 12300288,
+        "rssBytes": 18411520
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 3375,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 3497984,
+        "rssBytes": 9732096
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 21,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 3500,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 12300288,
+        "rssBytes": 18468864
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 3578.125,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 2994176,
+        "rssBytes": 9523200
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 22,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 3671.875,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 12300288,
+        "rssBytes": 18464768
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 3765.625,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 4255744,
+        "rssBytes": 9662464
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 23,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 3828.125,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 12292096,
+        "rssBytes": 18411520
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 3906.25,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 3502080,
+        "rssBytes": 9498624
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 24,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 3984.375,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 12304384,
+        "rssBytes": 18464768
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 4046.875,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 4157440,
+        "rssBytes": 9785344
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 25,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 4125,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 12083200,
+        "rssBytes": 18534400
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 4265.625,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 2781184,
+        "rssBytes": 9510912
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 26,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 4359.375,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 12091392,
+        "rssBytes": 18460672
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 4421.875,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 2936832,
+        "rssBytes": 9637888
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 27,
+      "loaded": {
+        "threads": 7,
+        "cpuMs": 4500,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 12087296,
+        "rssBytes": 18403328
+      },
+      "idle": {
+        "threads": 7,
+        "cpuMs": 4593.75,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 3633152,
+        "rssBytes": 9560064
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 28,
+      "loaded": {
+        "threads": 4,
+        "cpuMs": 4734.375,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 11988992,
+        "rssBytes": 18358272
+      },
+      "idle": {
+        "threads": 4,
+        "cpuMs": 4796.875,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 3117056,
+        "rssBytes": 9461760
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 29,
+      "loaded": {
+        "threads": 4,
+        "cpuMs": 4906.25,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 11988992,
+        "rssBytes": 18341888
+      },
+      "idle": {
+        "threads": 4,
+        "cpuMs": 5078.125,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 2621440,
+        "rssBytes": 9441280
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    },
+    {
+      "cycle": 30,
+      "loaded": {
+        "threads": 4,
+        "cpuMs": 5140.625,
+        "handles": 185,
+        "peakRssBytes": 18554880,
+        "privateBytes": 11837440,
+        "rssBytes": 18481152
+      },
+      "idle": {
+        "threads": 4,
+        "cpuMs": 5250,
+        "handles": 119,
+        "peakRssBytes": 18554880,
+        "privateBytes": 4214784,
+        "rssBytes": 9834496
+      },
+      "health": {
+        "accounts": 0,
+        "online": 0,
+        "rooms": 0,
+        "pendingConnections": 0,
+        "status": "ok"
+      }
+    }
+  ]
+}

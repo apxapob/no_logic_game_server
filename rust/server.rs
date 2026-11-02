@@ -209,21 +209,29 @@ impl Server {
     }
     fn broadcast(&self, r: &Room, v: Value, except: Option<&str>, targets: Option<&Value>) {
         if let Some(msg) = self.encoded(&v) {
-            for id in &r.active {
-                if except == Some(id.as_str())
-                    || targets
-                        .is_some_and(|a| !a.as_array().is_some_and(|a| a.contains(&json!(id))))
-                {
-                    continue;
-                }
-                if let Some(c) = self
-                    .players
-                    .get(id)
-                    .filter(|p| p.room.as_deref() == Some(&r.id))
-                    .and_then(|p| p.connection)
-                {
-                    self.raw(c, msg.clone());
-                }
+            self.broadcast_frame(r, msg, except, targets);
+        }
+    }
+    fn broadcast_frame(
+        &self,
+        r: &Room,
+        msg: Message,
+        except: Option<&str>,
+        targets: Option<&Value>,
+    ) {
+        for id in &r.active {
+            if except == Some(id.as_str())
+                || targets.is_some_and(|a| !a.as_array().is_some_and(|a| a.contains(&json!(id))))
+            {
+                continue;
+            }
+            if let Some(c) = self
+                .players
+                .get(id)
+                .filter(|p| p.room.as_deref() == Some(&r.id))
+                .and_then(|p| p.connection)
+            {
+                self.raw(c, msg.clone());
             }
         }
     }
@@ -250,13 +258,12 @@ impl Server {
         self.encoded(&json!({"method":"onGetRooms","data":[dto],"nextCursor":r.id}))
             .is_some()
     }
-    fn relay(&self, p: &str, v: &Value) -> bool {
-        if self.encoded(v).is_none() {
+    fn relay(&self, p: &str, v: &Value) -> Option<Message> {
+        let encoded = self.encoded(v);
+        if encoded.is_none() {
             self.err(p, "payload_too_large");
-            false
-        } else {
-            true
         }
+        encoded
     }
     pub fn disconnect(&mut self, cid: u64) {
         if !self.connections.contains_key(&cid) {
@@ -590,6 +597,7 @@ impl Server {
         }
         let mut scoped = true;
         let mut immediate = false;
+        let mut parsed = None;
         if let Message::Text(text) = &frame {
             let Ok(v) = protocol::parse(text) else {
                 self.error(cid, "invalid_message");
@@ -634,6 +642,7 @@ impl Server {
                 "setPushDevice",
             ]
             .contains(&method);
+            parsed = Some(v);
         } else if player.is_none() {
             self.error(cid, "invalid_message");
             return;
@@ -661,15 +670,21 @@ impl Server {
                 frame,
             });
         } else {
-            self.dispatch(cid, frame)
+            self.dispatch(cid, frame, parsed)
         }
     }
-    fn dispatch(&mut self, cid: u64, frame: Message) {
+    fn dispatch(&mut self, cid: u64, frame: Message, parsed: Option<Value>) {
         let Some(p) = self.connections.get(&cid).and_then(|c| c.player.clone()) else {
             return;
         };
         let result = match frame {
-            Message::Text(s) => self.handle(cid, &p, &protocol::parse(&s).unwrap()),
+            // Immediate traffic reuses the validated JSON. Delayed traffic keeps
+            // only its bounded wire bytes and parses them when the delay expires.
+            Message::Text(s) => self.handle(
+                cid,
+                &p,
+                &parsed.unwrap_or_else(|| protocol::parse(&s).unwrap()),
+            ),
             Message::Binary(b) => self.binary(&p, b),
             _ => Ok(()),
         };
@@ -1033,7 +1048,9 @@ impl Server {
             self.err(p, "no_room");
             return Ok(());
         };
-        let Some(mut r) = self.rooms.shift_remove(&id) else {
+        // Room listing is sorted by ID; only membership order selects the next
+        // owner. Avoid shifting every other room for each JSON relay message.
+        let Some(mut r) = self.rooms.swap_remove(&id) else {
             self.err(p, "no_room");
             return Ok(());
         };
@@ -1167,8 +1184,8 @@ impl Server {
                 } else {
                     json!({"method":"messageFromPlayer","data":{"from":p,"msg":if m=="sendTo"{&d["msg"]}else{d}}})
                 };
-                if self.relay(p, &out) {
-                    self.broadcast(
+                if let Some(out) = self.relay(p, &out) {
+                    self.broadcast_frame(
                         r,
                         out,
                         if m == "sendToRoom" { Some(p) } else { None },
@@ -1195,9 +1212,9 @@ impl Server {
                         return Ok(());
                     }
                     let out = json!({"method":"gameStarted","data":d});
-                    if !self.relay(p, &out) {
+                    let Some(out) = self.relay(p, &out) else {
                         return Ok(());
-                    }
+                    };
                     r.fixed = d["fixedRoster"] == true;
                     r.migration = r.fixed && d["hostMigration"] == true;
                     r.persistent = self.store.enabled && r.migration && d["persistent"] == true;
@@ -1209,12 +1226,12 @@ impl Server {
                     r.started = true;
                     self.diagnostics
                         .event("room.game_started", json!({"roomId":r.id,"ownerId":p}));
-                    self.broadcast(r, out, None, None);
+                    self.broadcast_frame(r, out, None, None);
                     self.lobby(json!({"method":"roomBlock","data":r.id}));
                 } else if m == "shareGameState" {
                     let out = json!({"method":"newGameState","data":d["gamestate"]});
-                    if self.relay(p, &out) {
-                        self.broadcast(
+                    if let Some(out) = self.relay(p, &out) {
+                        self.broadcast_frame(
                             r,
                             out,
                             if d.get("to").is_some() { None } else { Some(p) },
@@ -1229,8 +1246,8 @@ impl Server {
                         return Ok(());
                     }
                     let out = json!({"method":"onSetRoomMeta","data":d});
-                    if self.relay(p, &out) {
-                        self.broadcast(r, out, None, None)
+                    if let Some(out) = self.relay(p, &out) {
+                        self.broadcast_frame(r, out, None, None)
                     } else {
                         r.meta = old
                     }
@@ -1262,7 +1279,7 @@ impl Server {
                         && (!d.scoped || p.version == d.version)
                 })
             {
-                self.dispatch(d.cid, d.frame)
+                self.dispatch(d.cid, d.frame, None)
             } else {
                 self.diagnostics.event(
                     "message.discarded",
@@ -1351,6 +1368,41 @@ impl Server {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn disconnect_releases_delayed_and_queued_frame_allocations() {
+        struct Payload(Arc<AtomicUsize>, [u8; 64]);
+        impl AsRef<[u8]> for Payload {
+            fn as_ref(&self) -> &[u8] {
+                &self.1
+            }
+        }
+        impl Drop for Payload {
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, Ordering::Relaxed);
+            }
+        }
+        let live = Arc::new(AtomicUsize::new(1));
+        let frame = Message::Binary(Bytes::from_owner(Payload(live.clone(), [0; 64])));
+        let mut state = server();
+        let (tx, rx) = mpsc::unbounded_channel();
+        let (abort, _) = tokio::sync::watch::channel(false);
+        state.connected(1, tx, Arc::new(AtomicUsize::new(0)), abort);
+        state.delayed.push(Delayed {
+            at: now() + 1000,
+            cid: 1,
+            version: 0,
+            scoped: true,
+            size: 64,
+            frame: frame.clone(),
+        });
+        state.raw(1, frame);
+        state.disconnect(1);
+        assert!(state.delayed.is_empty());
+        assert!(state.connections.is_empty());
+        assert_eq!(live.load(Ordering::Relaxed), 1); // Socket receiver still owns its queued frame.
+        drop(rx);
+        assert_eq!(live.load(Ordering::Relaxed), 0);
+    }
     fn server() -> Server {
         let mut c = Config::load().unwrap();
         c.0["sessionDirectory"] = json!("");

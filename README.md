@@ -4,8 +4,9 @@ WebSocket rooms for client-authoritative games, with optional opaque session per
 
 The server is a standalone Rust executable. Build with `cargo build --release --locked`
 and run `target/release/no-logic-game-server` (`.exe` on Windows).
-See [deployment and rollback](docs/deployment.md). Node.js is used only by optional
-JavaScript tests, the demo HTTP server and load generators under `tools/`.
+See [deployment and rollback](docs/deployment.md). Server, test harnesses and load
+tools build with Cargo; Node.js and npm are not required. JavaScript in `demo.html`
+and its browser tests runs in the browser.
 The retired Node implementation remains available in Git history (last combined
 revision `8d4539a`), not in the current source tree.
 
@@ -73,43 +74,89 @@ cargo run --release --locked
 cargo run --locked -- dev delay=50
 ```
 
-Optional developer tools require Node **24+**:
+Start the optional demo HTTP server in another terminal:
 
 ```sh
-npm --prefix tools ci
-npm --prefix tools run demo
+cargo run --locked --bin relay-tool -- demo
 ```
 
 Open http://127.0.0.1:8081 in two tabs (not a file URL). Move the pointer to play Pong. The owner simulates; the other player sends coalesced input. Physics uses 120 Hz fixed steps; networking is capped at 20 Hz. Waiting solo owners check matchmaking every two seconds and converge on the smallest open demo room ID when tabs start simultaneously. Reconnect prioritizes an eligible started demo room. Credentials stay in sessionStorage, never URLs or logs. Duplicated tabs use a BroadcastChannel account claim to avoid sharing a live account. Expired credentials require explicitly creating a new guest. Use separate browser profiles if BroadcastChannel is unavailable.
 
 ```sh
-cargo fmt --check
+cargo fmt --all --check
 cargo clippy --all-targets --locked -- -D warnings
-cargo test --locked
-npm --prefix tools run check  # lint, native tests, build and Rust process/wire tests
-npm --prefix tools run benchmark  # release binary; bounded local loopback load
-npm --prefix tools audit
+cargo test --all-targets --locked
+cargo build --release --locked
+cargo run --release --locked --bin relay-tool -- benchmark
+cargo run --release --locked --bin relay-tool -- memory
 ```
 
-`tools/package.json` contains only test/load tooling dependencies (`ws`, ESLint).
-Its `minimatch` override retains the reviewed dependency security fix. The lockfile
-makes CI reproducible. No TypeScript compiler or Firebase Admin package is required.
+Browser tests require Chrome or Edge. On Windows, installed Edge/Chrome is detected;
+on Linux the default is `google-chrome`. Set `CHROME_BIN` to another compatible
+browser executable. CI runs both Ubuntu and Windows, including the ten demo cases.
+The server and non-browser tools do not need a browser.
 
-Tests exercise authentication, quotas, room lifecycle, JSON/binary wire contracts,
-persistence/restarts, mock FCM, logs, configuration and process shutdown against
-Rust. Native tests cover internal ownership, queue limits, storage and telemetry.
-Old tests of Node-specific classes and monkeypatches were removed with that server;
-this is no longer a Node/Rust differential suite. `test/storage-fixtures.cjs` only
-reads/writes persisted file-format fixtures; it does not implement a relay.
+Tests in `tests/` launch the real Rust executable and cover authentication, quotas,
+room lifecycle, JSON/binary wire contracts, persistence/restarts, mock FCM,
+logging, configuration, process shutdown and the command-line tools. Shared client
+and process helpers live in `rust/tooling/`; they are not linked into the server.
+Native tests additionally cover ownership, queue limits, storage and telemetry.
+See [test coverage](tests/README.md). Tests are grouped differently from the retired
+JavaScript suite; the number of test functions is not a coverage comparison.
 
-The default benchmark tests Rust. To compare retained native releases, set
-`COMPARE_NATIVE_BINARIES` to a JSON map of labels to executable paths.
-`COMPARE_PROTOCOL=json` selects JSON (default: binary); `COMPARE_ROUNDS`,
-`COMPARE_DURATION_MS`, `COMPARE_PAIRS`, and `COMPARE_SIZES` control the workload.
-Reports default to ignored `test-results/rust-comparison.json`. Each RTT includes
-two relay hops. Local loopback throughput is not a production capacity estimate.
-`npm --prefix tools run memory` runs repeated connection/session cleanup against
-the release binary; `RUST_SERVER_BINARY` can select another build.
+`relay-tool` provides these commands:
+
+| Command | Purpose |
+|---|---|
+| `demo` | Loopback-only demo HTTP server, port 8081 (`DEMO_PORT` overrides). |
+| `benchmark` | Local paired JSON/binary echo, separate server process, bounded RTT histogram. |
+| `memory` | Local connection/room/session churn, including unfinished uploads and abrupt closes. |
+| `smoke URL` | JSON, binary, legacy frames, host migration and rejoin against an authorized endpoint. |
+| `network-baseline URL` | 50 authenticated WebSocket ping/pong RTT samples. |
+| `loadtest CONFIG.json` | Stepped multiplayer JSON load; owner broadcasts state, peers send inputs. |
+
+Network commands accept `ws://` and TLS-verified `wss://`. Set `RELAY_ORIGIN` if the
+endpoint requires an Origin header. They create temporary test accounts/rooms;
+only run them against an endpoint you are authorized to test. Local commands
+launch their own isolated server and never select production automatically.
+
+For `benchmark`, `COMPARE_NATIVE_BINARIES` is an optional JSON map of labels to
+retained executable paths. `COMPARE_PROTOCOL=json` selects JSON (default: binary).
+`COMPARE_ROUNDS` (3), `COMPARE_DURATION_MS` (5000), `COMPARE_PAIRS` (16), and
+`COMPARE_SIZES` (`512,32000`) control the workload. Reports default to ignored
+`test-results/rust-comparison.json`; `COMPARE_OUTPUT` overrides the path. Each RTT
+includes two relay hops. Run without simultaneous builds or other load generators.
+**Remeasure both server binaries with the same generator** when comparing releases:
+Rust generator results are not directly comparable to historical Node measurements.
+
+For `memory`, use `CHURN_CYCLES` (30), `CHURN_CLIENTS` (64, divisible by 4),
+`CHURN_STATE_BYTES` (131072), `CHURN_DELAY_MS` (0), and `CHURN_OUTPUT`.
+`RUST_SERVER_BINARY` overrides the sibling server executable for local tools.
+All live health counters must return to zero after each cycle. The report samples
+Windows private committed bytes/Linux anonymous RSS as well as RSS and handles.
+Allocator high-water memory alone is not a leak, and churn does not prove every
+possible execution leak-free. Temporary session files are cleaned up afterwards.
+
+Example `loadtest` configuration (write to an ignored local file):
+
+```json
+{"url":"ws://127.0.0.1:8080/","output":"test-results/load.jsonl",
+ "profile":"local","levels":[4,16],"roomSize":4,"hz":20,
+ "stateBytes":1024,"inputBytes":128,"warmupSeconds":5,"durationSeconds":30,
+ "rampRooms":4,"rampPauseMs":200,"rampRetryLimit":0,"stopP95Ms":500}
+```
+
+The JSONL stage fields remain consumable by `scripts/vps-analyze.py` alongside
+`scripts/vps-monitor.py` (Python 3 standard library). Generator-specific metrics
+that have no Rust equivalent are null, rather than fabricated Node event-loop data.
+A delivery/rate/latency threshold failure exits nonzero. Both tools are optional;
+Python is not required to build, run, or test the server.
+
+Full General gameplay/turn-equality automation belongs to the General client
+project and depends on that project's build/test tooling. This repository's
+`smoke` verifies the relay protocol; it does not claim to simulate General's UI
+or game rules. The old wrapper that launched a neighboring Vite/Playwright project
+has been removed from the server repository.
 
 ## Breaking authentication migration
 

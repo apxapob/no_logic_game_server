@@ -13,19 +13,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: tools/package-lock.json
-      - run: npm --prefix tools ci
-      - run: npm --prefix tools audit
       # Keep warning-denied checks on the locally validated toolchain.
       - run: rustup toolchain install 1.96.0 --profile minimal --component rustfmt,clippy
       - run: rustup default 1.96.0
-      - run: npm --prefix tools run check
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      # Hosted runners provide Edge (Windows) / google-chrome (Ubuntu).
+      - run: cargo test --all-targets --locked
       - name: Check connection and session cleanup
-        run: node scripts/memory-churn.cjs
+        run: cargo run --locked --bin relay-tool -- memory
         env:
           RUST_SERVER_BINARY: target/debug/no-logic-game-server${{ runner.os == 'Windows' && '.exe' || '' }}
           CHURN_CYCLES: '3'

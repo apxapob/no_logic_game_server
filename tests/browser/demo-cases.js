@@ -1,21 +1,19 @@
-'use strict';
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const vm = require('node:vm');
-const path = require('node:path');
+// These tests run in a real browser, with an isolated fake DOM/clock per case.
+const results=[];
+function test(name,fn){try{fn();results.push({name,ok:true});}catch(error){results.push({name,ok:false,error:String(error.stack)});}}
+function stable(value){return JSON.stringify(value,(_k,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b))):v);}
+const assert={equal:(a,b)=>{if(a!==b)throw new Error(`${a} !== ${b}`);},deepEqual:(a,b)=>{if(stable(a)!==stable(b))throw new Error(`${stable(a)} != ${stable(b)}`);},ok:v=>{if(!v)throw new Error('Expected truthy value');}};
 function demo() {
   const sent = [], timers = [], intervals = [], raf = [], listeners = {};
   const ctx = new Proxy({}, {get: (o,k) => o[k] || (() => {})});
   const canvas = {getContext:()=>ctx,addEventListener:(k,f)=>listeners[k]=f,getBoundingClientRect:()=>({top:0,height:100})};
   const status = {textContent:'',appendChild() {}};
   class WS { static OPEN = 1; constructor(url) { this.url=url; this.readyState=1; WS.instance=this; } send(text) { sent.push(JSON.parse(text)); } }
-  const sandbox = {document:{getElementById:id=>id==='game'?canvas:status,createElement:()=>({})},sessionStorage:{getItem:()=>null,setItem() {},removeItem() {}},crypto:{randomUUID:()=> 'tab'},WebSocket:WS,location:{protocol:'http:',host:'localhost:8081',reload() {}},innerWidth:800,innerHeight:600,devicePixelRatio:2,addEventListener() {},setTimeout:f=>timers.push(f),setInterval:(f,ms)=>intervals.push({f,ms}),requestAnimationFrame:f=>raf.push(f),Math,JSON};
-  vm.createContext(sandbox);
-  const html = fs.readFileSync(path.join(__dirname,'../demo.html'),'utf8');
-  vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],sandbox);
+  const sandbox = {document:{getElementById:id=>id==='game'?canvas:status,createElement:()=>({})},sessionStorage:{getItem:()=>null,setItem() {},removeItem() {}},crypto:{randomUUID:()=> 'tab'},WebSocket:WS,location:{protocol:'http:',host:'localhost:8081',reload() {}},innerWidth:800,innerHeight:600,devicePixelRatio:2,addEventListener() {},setTimeout:f=>timers.push(f),setInterval:(f,ms)=>intervals.push({f,ms}),requestAnimationFrame:f=>raf.push(f),Math,JSON,BroadcastChannel:undefined};
+  const execute = new Function(...Object.keys(sandbox), demoSource + '; return code => eval(code);');
+  const evaluate = execute(...Object.values(sandbox));
   timers.shift()(); WS.instance.onopen();
-  return {sent,timers,intervals,raf,listeners,canvas,get ws() { return WS.instance; },eval:code=>vm.runInContext(code,sandbox),event:(method,data,extra={})=>WS.instance.onmessage({data:JSON.stringify({method,data,...extra})})};
+  return {sent,timers,intervals,raf,listeners,canvas,get ws() { return WS.instance; },eval:code=>evaluate(code),event:(method,data,extra={})=>WS.instance.onmessage({data:JSON.stringify({method,data,...extra})})};
 }
 test('first frame authentication, IDs, room marker and ownership',()=>{
   const d=demo(); assert.deepEqual(d.sent[0],{method:'authenticate',data:{}}); assert.equal(d.ws.url,'ws://127.0.0.1:8080/');
@@ -110,3 +108,6 @@ test('solo matchmaking excludes protected, full, started and unrelated rooms',()
   d.event('onGetRooms',[roomDTO('a','x',{hasPassword:true}),roomDTO('b','x',{players:['x','y']}),roomDTO('c','x',{gameStarted:true}),roomDTO('d','x',{gameData:{demo:'other'}}),own]);
   assert.equal(d.sent.length,n); assert.equal(d.eval('room.roomId'),'z');
 });
+
+document.body.textContent=JSON.stringify(results);
+document.body.dataset.result=results.length===10&&results.every(r=>r.ok)?'passed':'failed';

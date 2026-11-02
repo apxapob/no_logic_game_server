@@ -37,7 +37,7 @@ the server requires clients to register again. This does not provide corresponde
 games: rooms still disappear after the last active participant leaves. Do not
 restart production to enable this while rooms are active without coordinating it.
 
-Validation: `npm --prefix tools run check` includes push authorization, registration rotation,
+Validation: `cargo test --all-targets --locked` includes push authorization, registration rotation,
 revocation, foreground suppression, offline delivery, deduplication and log-redaction
 tests. A real-device smoke test additionally requires a valid service account and
 the target device's current FCM token.

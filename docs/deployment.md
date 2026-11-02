@@ -9,14 +9,15 @@ Node: clients use the same protocol and session files.
 
 Build on Linux with the deployment host's architecture and a compatible libc, or
 use a matching Linux build environment. Do not copy the Windows `.exe` to a VPS.
-CI uses Rust 1.96.0. Node 24+ and npm are needed for the optional JavaScript test clients;
-the deployed Rust binary runs without Node, npm or Cargo.
+CI uses Rust 1.96.0 and Chrome/Edge for the browser demo tests. Node and npm are
+not required. The deployed Rust binary runs without Cargo or a browser.
 
 ```sh
 rustup toolchain install 1.96.0 --profile minimal --component rustfmt,clippy
 rustup default 1.96.0
-npm --prefix tools ci
-npm --prefix tools run check
+cargo fmt --all --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --all-targets --locked
 cargo build --release --locked
 ```
 

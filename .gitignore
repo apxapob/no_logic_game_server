@@ -2,11 +2,6 @@
 /target/
 /test-results/
 
-# Optional JavaScript developer tools
-node_modules/
-.npm/
-.eslintcache
-
 # Runtime data and logs
 /sessions/
 /logs/

@@ -2,6 +2,7 @@
 name = "no-logic-game-server"
 version = "1.0.0"
 edition = "2024"
+default-run = "no-logic-game-server"
 rust-version = "1.88"
 
 [dependencies]
@@ -18,7 +19,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 subtle = "2"
 tokio = { version = "1", features = ["full"] }
-tokio-tungstenite = "0.28"
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 gcp_auth = "0.12"
 memory-stats = "1"
@@ -31,3 +32,7 @@ codegen-units = 1
 [[bin]]
 name = "no-logic-game-server"
 path = "rust/main.rs"
+
+[[bin]]
+name = "relay-tool"
+path = "rust/tools/main.rs"

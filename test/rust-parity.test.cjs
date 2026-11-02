@@ -9,7 +9,9 @@ const { connect, createRoom, enterRoom, eventually } = require('./helpers.cjs');
 const NodeServer = require('../dist/Server').Server;
 const RustServer = require('./rust-server.cjs').Server;
 async function launch(t, Backend, dir = '') {
-  const s = new Backend({ host: '127.0.0.1', port: 0, sessionDirectory: dir, maxMessagesPerSecond: 10000, maintenanceIntervalMs: 10 });
+  // This test does not exercise maintenance timing. The production interval avoids
+  // flooding Rust's test-control pipe with full saved-state snapshots on slow CI.
+  const s = new Backend({ host: '127.0.0.1', port: 0, sessionDirectory: dir, maxMessagesPerSecond: 10000, maintenanceIntervalMs: 1000 });
   t.after(() => s.stop()); await s.start();
   return { server: s, url: `ws://127.0.0.1:${s.address().port}/` };
 }

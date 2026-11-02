@@ -65,6 +65,72 @@ jobs. Active rooms are protected. Reading a room does not refresh its age.
 `MAX_SESSION_BYTES` / `maxSessionBytes` defaults to 16 MiB per opaque state; it bounds
 individual transfers, not total RAM. The server never decompresses the state.
 
+## Profile report tickets
+
+The relay authenticates report senders; `project-telemetry` accepts reports, counts
+them and provides the moderation dashboard. The relay does not store reports or
+decide which profiles to hide.
+
+### Configure
+
+1. Generate a private random secret of 32–128 URL-safe characters (`A-Z`, `a-z`,
+   `0-9`, `_`, `-`). For example, `openssl rand -hex 32` produces a suitable value.
+2. Set `MODERATION_SIGNING_KEY` in the relay's private environment. Set the same
+   value as `moderationSigningKey` on the game's project entry in the collector's
+   `TELEMETRY_PROJECTS`. Preserve that entry's existing write key and origins.
+   Use a different signing secret for each project.
+3. Deploy the collector first, then the relay, then the client. Check active rooms
+   before restarting the relay; follow [deployment and rollback](docs/deployment.md).
+   Configure the client with the collector endpoint and project write key (see below).
+
+Never put the signing secret in Git, client code or `VITE_*` variables. The project
+write key embedded in a client is separate and cannot authenticate a report sender.
+With no signing secret configured, the relay replies `moderation_unavailable`.
+
+### Request and submit
+
+After normal WebSocket authentication, send:
+
+```json
+{"method":"getModerationTicket","data":{"requestId":"REQUEST_UUID","target":"TARGET_PLAYER_UUID","room":"ROOM_UUID"}}
+```
+
+The IDs must be valid UUIDs. The target must be another player: either the owner
+of the specified live room, or a player in that room together with the requester.
+Being an owner visible in the room list is enough; joining that room is not required.
+The response uses the existing request/reply envelope:
+
+```json
+{"method":"sessionReply","data":{"requestId":"REQUEST_UUID","ticket":"PAYLOAD.SIGNATURE"}}
+```
+
+When unavailable or disallowed, `data.error` is `moderation_unavailable` instead.
+The HMAC-SHA256 ticket binds `reporter`, `target`, `room`, a five-minute expiry
+(Unix milliseconds), and `purpose: "profile-report-v1"`. Obtain a fresh ticket
+when retrying after expiry. Do not log tickets.
+
+Send the ticket to the collector using HTTPS:
+
+```http
+POST /v1/moderation/report
+Authorization: Bearer <project write key>
+Content-Type: application/json
+
+{"target":"TARGET_PLAYER_UUID","reporter":"YOUR_PLAYER_UUID","room":"ROOM_UUID","name":"Displayed name","image":"","reason":"name","details":"","ticket":"PAYLOAD.SIGNATURE"}
+```
+
+If the collector is mounted at `/telemetry`, prepend that prefix to the HTTP path.
+An accepted report returns `accepted: true`; the client then replaces the profile
+locally. Three distinct authenticated reporting accounts cause global replacement;
+repeated reports from the same account do not increase the count. This verifies
+relay accounts, not unique humans or Apple/Google identities.
+
+General already implements this flow. Its build variables are `VITE_MODERATION_URL`
+and `VITE_MODERATION_WRITE_KEY`, falling back to `VITE_TELEMETRY_URL` and
+`VITE_TELEMETRY_WRITE_KEY`. Reporting works independently of analytics opt-out.
+Moderators use the collector's `/admin/` dashboard, section «Жалобы на игроков»;
+see `project-telemetry`'s README and `MODERATION.md` for review, restoration and limits.
+
 ## Run
 
 Use Rust (CI: 1.96.0). The runtime has no JavaScript dependency:
@@ -181,6 +247,7 @@ Text frames are JSON `{method, data}`. IDs are UUIDs; room DTOs use `roomId`, pl
 | Method | data |
 |---|---|
 | getRooms | omitted/null or `{after?:roomId}` for byte-bounded pages |
+| getModerationTicket | `{requestId,target,room}`; UUIDs, authenticated sender; see [profile report tickets](#profile-report-tickets) |
 | createRoom | `{name,maxPlayers,password?:string\|null,gameData?:JSON}` |
 | updateRoom | `{name?:string,maxPlayers?:number,password?:string\|null}`; owner only, before game start. Omitted fields stay unchanged; null/empty password removes it. Names must contain 1–64 characters, with non-whitespace content. Capacity cannot be below the current player count. |
 | enterRoom | `{roomId,password?:string\|null}` |
@@ -309,6 +376,7 @@ Options and matching environment variables (milliseconds unless noted):
 | allowedOrigins | ALLOWED_ORIGINS (CSV) | http://127.0.0.1:8081,http://localhost:8081 |
 | allowNoOrigin | ALLOW_NO_ORIGIN | true |
 | verboseLogs | VERBOSE_LOGS | false |
+| moderationSigningKey | MODERATION_SIGNING_KEY | empty (profile report tickets disabled) |
 | logDirectory | LOG_DIRECTORY | ./logs |
 | logMaxBytes | LOG_MAX_BYTES | 1073741824 (1 GiB total) |
 | logFileMaxBytes | LOG_FILE_MAX_BYTES | 16777216 (16 MiB per file) |

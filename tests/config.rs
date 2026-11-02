@@ -26,6 +26,9 @@ async fn run(env: &[(&str, &str)], args: &[&str]) -> Result<std::process::Output
 async fn cli_configuration_validation() -> Result<()> {
     for (key, values) in [
         ("PORT", vec!["-1", "65536", "1.5", "80x", "NaN", ""]),
+        ("UDP_PORT", vec!["-1", "65536", "1.5", ""]),
+        ("UDP_ENABLED", vec!["yes", "1"]),
+        ("UDP_HOST", vec![""]),
         ("MAX_CONNECTIONS", vec!["0", "-1", "3.5", "1x"]),
         ("ALLOW_NO_ORIGIN", vec!["yes", "1", ""]),
         ("VERBOSE_LOGS", vec!["TRUE"]),

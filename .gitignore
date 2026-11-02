@@ -1,6 +1,7 @@
 # Rust output and local test artifacts
 /target/
 /test-results/
+__pycache__/
 
 # Runtime data and logs
 /sessions/

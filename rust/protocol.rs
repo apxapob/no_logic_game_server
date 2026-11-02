@@ -194,7 +194,7 @@ pub fn validate(v: &Value, room_max: usize, accounts: usize) -> bool {
                 && optional(d, "translations", translations)
         }
         "getRooms" => d.is_null() || (obj && optional(d, "after", uuid)),
-        "leaveRoom" | "requestGameState" => d.is_null(),
+        "leaveRoom" | "requestGameState" | "openUdp" | "closeUdp" => d.is_null(),
         "getPlayers" => d.is_null() || ids(d, accounts, true),
         "changeName" => name(d),
         "sendChatMsg" => string(d, 0, 2048, false),

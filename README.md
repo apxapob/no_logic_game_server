@@ -4,6 +4,8 @@ WebSocket rooms for client-authoritative games, with optional opaque session per
 
 The server is a standalone Rust executable. Build with `cargo build --release --locked`
 and run `target/release/no-logic-game-server` (`.exe` on Windows).
+Native clients can opt into an authenticated, room-scoped UDP channel alongside
+WebSocket. It is disabled by default; see [UDP protocol and configuration](docs/udp.md).
 See [deployment and rollback](docs/deployment.md). Server, test harnesses and load
 tools build with Cargo; Node.js and npm are not required. JavaScript in `demo.html`
 and its browser tests runs in the browser.

@@ -11,6 +11,9 @@ base64 = "0.22"
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 futures-util = "0.3"
+hmac = "0.12"
+sha2 = "0.10"
+socket2 = "0.6"
 indexmap = { version = "2", features = ["serde"] }
 rand = "0.9"
 regex = "1"

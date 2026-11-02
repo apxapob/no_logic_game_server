@@ -18,10 +18,49 @@ An ordinary HTTP/WebSocket reverse proxy does not forward this channel. Clients
 use the public server hostname and advertised UDP port; external port mappings
 must preserve that port (or clients must override the endpoint).
 
+## Tunable limits
+
+Set these environment variables before starting the server; changes require a restart.
+All defaults preserve the previous behavior. The corresponding camelCase option is
+used by the Rust configuration and test harness.
+
+| Environment | Option | Default | Meaning |
+|---|---|---|---|
+| `UDP_MAX_DATAGRAM_BYTES` | `udpMaxDatagramBytes` | 1200 | Complete datagram, including 69 bytes of protocol overhead; range 85–65507 |
+| `UDP_INCOMING_PACKETS_PER_SECOND` | `udpIncomingPacketsPerSecond` | `MAX_MESSAGES_PER_SECOND` (120) | Authenticated incoming packets per connection, including handshake |
+| `UDP_OUTGOING_PACKETS_PER_SECOND` | `udpOutgoingPacketsPerSecond` | `MAX_MESSAGES_PER_SECOND` (120) | Outgoing packets per connection, including handshake |
+| `UDP_GLOBAL_PACKETS_PER_SECOND` | `udpGlobalPacketsPerSecond` | 4096 | Listener admission budget before authentication |
+| `UDP_RECEIVE_BUFFER_BYTES` | `udpReceiveBufferBytes` | 1048576 | Requested OS socket receive buffer |
+| `UDP_SEND_BUFFER_BYTES` | `udpSendBufferBytes` | 1048576 | Requested OS socket send buffer |
+| `UDP_ENDPOINT_TTL_MS` | `udpEndpointTtlMs` | 60000 | Binding lifetime since valid incoming data or successful handshake |
+| `UDP_CHALLENGE_TTL_MS` | `udpChallengeTtlMs` | 5000 | Maximum handshake challenge age |
+| `UDP_SEND_TIMEOUT_MS` | `udpSendTimeoutMs` | 2 | Deadline for each socket send |
+| `UDP_RECEIVE_ERROR_BACKOFF_MS` | `udpReceiveErrorBackoffMs` | 100 | Backoff after unexpected socket receive errors |
+
+Except for the datagram size range above, values must be positive integers up to
+2147483647; zero does not disable a limit. Invalid values fail startup even if UDP
+is disabled. The OS may cap socket buffer requests. Separate UDP quotas do not
+change WebSocket's `MAX_MESSAGES_PER_SECOND` quota. Rate windows remain one second.
+The NLU1 header, HMAC size and 64-packet replay window are protocol constants, not
+operational tuning knobs.
+
+The 65507-byte ceiling is the IPv4 UDP payload limit, not a recommended Internet
+packet size. Larger datagrams can require IP fragmentation; 1200 remains the
+conservative default. Clients must use the advertised limit rather than assume
+1200, and size their receive buffers and transport packets accordingly. Payload
+capacity is `maxDatagramBytes - 69`. Clients with hardcoded defaults must be updated
+before changing size or timeout settings.
+
+Both `onConnected.data.udpRelay` and `udpSession.data` advertise
+`maxDatagramBytes`, `maxPayloadBytes`, `endpointTtlMs`, `challengeTtlMs`,
+`incomingPacketsPerSecond` and `outgoingPacketsPerSecond`, alongside `version` and
+`port`. Receive-only clients should refresh their binding well before
+`endpointTtlMs` (for example, every one third of that interval).
+
 ## Session and endpoint establishment
 
 1. Authenticate over **WSS** and enter a room. `onConnected.data.udpRelay` advertises
-   `{version:1,port,maxDatagramBytes:1200}` when enabled.
+   `version:1`, the bound port and the effective limits listed above when enabled.
 2. Send WebSocket `{"method":"openUdp","data":null}`. The `udpSession` response
    data contains `connectionId` (a decimal string encoding u64), `secret` (standard
    Base64, 32 random bytes), `version`, `port`, and `maxDatagramBytes`.
@@ -32,13 +71,13 @@ must preserve that port (or clients must override the endpoint).
 4. Verify the response signature, connection ID, kind, and replay sequence. Send
    kind 1 with that challenge as payload and a zero address. The server binds the
    observed source IP/port only if the challenge matches, comes from the same
-   endpoint, and is at most five seconds old. Kind 4 acknowledges the binding.
+   endpoint, and is no older than `UDP_CHALLENGE_TTL_MS` (five seconds by default). Kind 4 acknowledges the binding.
 5. Send kind 2 payloads. Other opted-in, bound peers receive kind 5 datagrams.
 
 Retry the handshake with a new probe and increasing packet sequences if a response
-is lost. The endpoint expires after 60 seconds without valid incoming relay data
+is lost. The endpoint expires after `UDP_ENDPOINT_TTL_MS` (60 seconds by default) without valid incoming relay data
 or a successful handshake. Receive-only clients should repeat the handshake every
-20 seconds. Repeat it after a network/NAT change. The old endpoint can remain active
+one third of the advertised endpoint TTL (20 seconds by default). Repeat it after a network/NAT change. The old endpoint can remain active
 until the new challenge is confirmed. A probe alone never redirects game traffic.
 
 `closeUdp` with null data revokes the key and replies `udpClosed`. Disconnect,
@@ -62,7 +101,7 @@ which differs from the default `.NET Guid.ToByteArray()` layout.
 | 37 | variable | Opaque payload (kind 2/5: 1â€“1131 bytes; handshake: exactly 16 bytes) |
 | final 32 | 32 | HMAC-SHA256 of all preceding bytes, using this connection's secret |
 
-Each complete datagram is at most 1200 bytes. The server creates a separate signed
+Each complete datagram is at most `UDP_MAX_DATAGRAM_BYTES` (default 1200 bytes). The server creates a separate signed
 packet for each recipient, replaces the address with the authenticated sender,
 and uses the recipient's key/counter. It never forwards the sender's credentials.
 Native .NET clients can compute/verify the signature with `HMACSHA256`; compare
@@ -80,17 +119,19 @@ numbers inside the payload if stale movement updates should be discarded.
   room. Only peers with a valid UDP binding receive data. There is no automatic
   WebSocket fallback, acknowledgement or retransmission of game packets.
 - Incoming and outgoing UDP packets each have a separate per-connection budget
-  of `MAX_MESSAGES_PER_SECOND` (default 120), including handshake packets. The
-  listener admits at most 4096 datagrams/second globally. Over-budget, invalid,
+  of `UDP_INCOMING_PACKETS_PER_SECOND` and `UDP_OUTGOING_PACKETS_PER_SECOND`,
+  including handshake packets. Both inherit `MAX_MESSAGES_PER_SECOND` (default
+  120) unless explicitly set. The listener admits at most
+  `UDP_GLOBAL_PACKETS_PER_SECOND` (default 4096) datagrams/second globally. Over-budget, invalid,
   oversized and unauthenticated datagrams are silently dropped.
   Failed HMAC verification and captured replays do not consume the identified
   player's budget; unauthenticated traffic remains subject to the global limit.
   Key rotation and `closeUdp`/`openUdp` do not reset either connection budget.
-- The listener requests 1 MiB receive/send socket buffers to absorb bounded bursts;
+- The listener requests configurable receive/send socket buffers (1 MiB each by default) to absorb bounded bursts;
   the operating system may cap or adjust these values. This does not remove loss
   or replace application-level congestion control.
 - There is at most one UDP state command outstanding; no per-packet spawned tasks
-  or unbounded application queue. Socket sends have a two-millisecond deadline.
+  or unbounded application queue. Socket sends have a `UDP_SEND_TIMEOUT_MS` deadline (two milliseconds by default).
   `SEND_DELAY_MS` only applies to WebSocket traffic, not UDP.
 - HMAC authenticates packets but **does not encrypt their payloads**. Exchange keys
   over WSS in production; keep sensitive data on WSS. UDP secrets are redacted by

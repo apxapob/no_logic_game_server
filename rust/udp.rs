@@ -5,10 +5,8 @@ use sha2::Sha256;
 use std::{net::SocketAddr, sync::atomic::Ordering, time::Instant};
 use tokio::{net::UdpSocket, sync::watch};
 
-pub const MAX_PACKET: usize = 1200;
 const HEADER: usize = 37;
 const TAG: usize = 32;
-const TTL: u64 = 60_000;
 type Signature = Hmac<Sha256>;
 
 #[derive(Default)]
@@ -119,7 +117,9 @@ impl Server {
         t: u64,
     ) -> Vec<(SocketAddr, Vec<u8>)> {
         let mut output = Vec::new();
-        if !(HEADER + TAG..=MAX_PACKET).contains(&bytes.len()) || &bytes[..4] != b"NLU1" {
+        if !(HEADER + TAG..=self.config.n("udpMaxDatagramBytes")).contains(&bytes.len())
+            || &bytes[..4] != b"NLU1"
+        {
             return output;
         }
         let kind = bytes[4];
@@ -157,7 +157,10 @@ impl Server {
         let Some(session) = c.udp.as_mut().filter(|u| u.version == player.version) else {
             return output;
         };
-        let limit = self.config.n("maxMessagesPerSecond");
+        let incoming_limit = self.config.n("udpIncomingPacketsPerSecond");
+        let outgoing_limit = self.config.n("udpOutgoingPacketsPerSecond");
+        let endpoint_ttl = self.config.n("udpEndpointTtlMs") as u64;
+        let challenge_ttl = self.config.n("udpChallengeTtlMs") as u64;
         let mut mac = Signature::new_from_slice(&session.secret).unwrap();
         mac.update(&bytes[..bytes.len() - TAG]);
         if mac.verify_slice(&bytes[bytes.len() - TAG..]).is_err() {
@@ -169,14 +172,14 @@ impl Server {
         // Unauthenticated traffic is bounded by the listener's global budget.
         // It must not consume a victim's quota; captured replays must not either.
         // These counters belong to the WebSocket connection, not its rotating key.
-        if !c.udp_incoming_rate.accept(t, limit) {
+        if !c.udp_incoming_rate.accept(t, incoming_limit) {
             return output;
         }
         match kind {
             0 => {
                 let challenge: [u8; 16] = rand::random();
                 session.challenge = Some((source, challenge, t));
-                if c.udp_outgoing_rate.accept(t, limit)
+                if c.udp_outgoing_rate.accept(t, outgoing_limit)
                     && let Some(packet) = session.packet(cid, 3, &[0; 16], &challenge)
                 {
                     output.push((source, packet));
@@ -185,12 +188,12 @@ impl Server {
             1 => {
                 if let Some((address, challenge, at)) = session.challenge
                     && address == source
-                    && t.saturating_sub(at) <= 5000
+                    && t.saturating_sub(at) <= challenge_ttl
                     && payload == challenge
                 {
                     session.challenge = None;
                     session.endpoint = Some((source, t));
-                    if c.udp_outgoing_rate.accept(t, limit)
+                    if c.udp_outgoing_rate.accept(t, outgoing_limit)
                         && let Some(packet) = session.packet(cid, 4, &[0; 16], &challenge)
                     {
                         output.push((source, packet));
@@ -198,10 +201,9 @@ impl Server {
                 }
             }
             2 => {
-                if !session
-                    .endpoint
-                    .is_some_and(|(address, at)| address == source && t.saturating_sub(at) <= TTL)
-                {
+                if !session.endpoint.is_some_and(|(address, at)| {
+                    address == source && t.saturating_sub(at) <= endpoint_ttl
+                }) {
                     return output;
                 }
                 session.endpoint = Some((source, t));
@@ -229,10 +231,10 @@ impl Server {
                     let Some((address, at)) = session.endpoint else {
                         continue;
                     };
-                    if t.saturating_sub(at) > TTL {
+                    if t.saturating_sub(at) > endpoint_ttl {
                         continue;
                     }
-                    if connection.udp_outgoing_rate.accept(t, limit)
+                    if connection.udp_outgoing_rate.accept(t, outgoing_limit)
                         && let Some(packet) =
                             session.packet(recipient, 5, sender.as_bytes(), payload)
                     {
@@ -246,9 +248,15 @@ impl Server {
     }
 }
 
-pub async fn run(socket: UdpSocket, state: Shared, mut stop: watch::Receiver<bool>) {
+pub async fn run(
+    socket: UdpSocket,
+    state: Shared,
+    mut stop: watch::Receiver<bool>,
+    config: crate::config::Config,
+) {
     // One outstanding state command; no unbounded datagram tasks or queues.
-    let mut buffer = [0u8; MAX_PACKET + 1];
+    let max_packet = config.n("udpMaxDatagramBytes");
+    let mut buffer = vec![0u8; max_packet + 1];
     let start = Instant::now();
     let mut rate = Rate::default();
     loop {
@@ -268,16 +276,16 @@ pub async fn run(socket: UdpSocket, state: Shared, mut stop: watch::Receiver<boo
                             | std::io::ErrorKind::WouldBlock) => continue,
                     Err(_) => {
                         // Avoid a tight loop on a persistent OS/socket failure.
-                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        tokio::time::sleep(std::time::Duration::from_millis(config.n("udpReceiveErrorBackoffMs") as u64)).await;
                         continue;
                     }
                 };
-                if size > MAX_PACKET || !rate.accept(start.elapsed().as_millis() as u64, 4096) { continue; }
+                if size > max_packet || !rate.accept(start.elapsed().as_millis() as u64, config.n("udpGlobalPacketsPerSecond")) { continue; }
                 let bytes = buffer[..size].to_vec();
                 let Ok(packets) = state.query(move |s| s.datagram(&bytes, source)).await else { break; };
                 for (address, packet) in packets {
                     // Bound socket backpressure; UDP never builds an application queue.
-                    let _ = tokio::time::timeout(std::time::Duration::from_millis(2), socket.send_to(&packet, address)).await;
+                    let _ = tokio::time::timeout(std::time::Duration::from_millis(config.n("udpSendTimeoutMs") as u64), socket.send_to(&packet, address)).await;
                 }
             }
         }
@@ -301,6 +309,8 @@ mod tests {
         config.0["verboseLogs"] = json!(false);
         config.0["udpEnabled"] = json!(true);
         config.0["maxMessagesPerSecond"] = json!(120);
+        config.0["udpIncomingPacketsPerSecond"] = json!(120);
+        config.0["udpOutgoingPacketsPerSecond"] = json!(120);
         config.0["sendDelayMs"] = json!(0);
         let mut server = Server::new(config).unwrap();
         let mut room = Room::new(
@@ -378,7 +388,7 @@ mod tests {
                 .len(),
             1
         );
-        let expired = now() - TTL - 1;
+        let expired = now() - server.config.n("udpEndpointTtlMs") as u64 - 1;
         server
             .connections
             .get_mut(&1)
@@ -422,6 +432,90 @@ mod tests {
                 .is_empty()
         );
     }
+    #[test]
+    fn configured_quotas_and_timeouts_are_enforced() {
+        let mut server = server_with_udp_players(2);
+        server.config.0["udpIncomingPacketsPerSecond"] = json!(2);
+        server.config.0["udpOutgoingPacketsPerSecond"] = json!(1);
+        server.config.0["udpChallengeTtlMs"] = json!(10);
+        server.config.0["udpEndpointTtlMs"] = json!(20);
+        let from = "127.0.0.1:10001".parse().unwrap();
+        let to = "127.0.0.1:10002".parse().unwrap();
+        let key = server.connections[&1].udp.as_ref().unwrap().secret;
+        let t = 10000;
+        let reply = server.datagram_at(&encode(&key, 0, 1, 1, &[0; 16], &[0; 16]), from, t);
+        assert_eq!(reply.len(), 1);
+        assert!(
+            server
+                .datagram_at(
+                    &encode(&key, 1, 1, 2, &[0; 16], &reply[0].1[37..53]),
+                    from,
+                    t + 11
+                )
+                .is_empty()
+        );
+        assert!(
+            server.connections[&1]
+                .udp
+                .as_ref()
+                .unwrap()
+                .endpoint
+                .is_none()
+        );
+        // Reset only the test counters, then isolate the input and recipient output quotas.
+        server.connections.get_mut(&1).unwrap().udp_incoming_rate = Rate::default();
+        server
+            .connections
+            .get_mut(&1)
+            .unwrap()
+            .udp
+            .as_mut()
+            .unwrap()
+            .endpoint = Some((from, t));
+        server
+            .connections
+            .get_mut(&2)
+            .unwrap()
+            .udp
+            .as_mut()
+            .unwrap()
+            .endpoint = Some((to, t));
+        assert_eq!(
+            server
+                .datagram_at(&encode(&key, 2, 1, 3, &[0; 16], b"a"), from, t)
+                .len(),
+            1
+        );
+        assert!(
+            server
+                .datagram_at(&encode(&key, 2, 1, 4, &[0; 16], b"b"), from, t)
+                .is_empty()
+        );
+        assert_eq!(server.connections[&1].udp_incoming_rate.count, 2);
+        assert_eq!(server.connections[&2].udp_outgoing_rate.count, 1);
+        assert!(
+            server
+                .datagram_at(&encode(&key, 0, 1, 5, &[0; 16], &[0; 16]), from, t)
+                .is_empty()
+        );
+        // Next rate window: expired endpoints do not route or refresh their binding.
+        assert!(
+            server
+                .datagram_at(&encode(&key, 2, 1, 6, &[0; 16], b"expired"), from, t + 1000)
+                .is_empty()
+        );
+        assert_eq!(
+            server.connections[&1]
+                .udp
+                .as_ref()
+                .unwrap()
+                .endpoint
+                .unwrap()
+                .1,
+            t
+        );
+    }
+
     #[test]
     fn replay_window_allows_reordering_but_not_duplicates_or_old_packets() {
         let mut replay = Replay::default();

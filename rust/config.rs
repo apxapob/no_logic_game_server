@@ -7,6 +7,9 @@ impl Config {
     pub fn load() -> Result<Self> {
         let mut v = json!({"host":"127.0.0.1","port":8080,"devMode":false,"sendDelayMs":0,
             "udpEnabled":false,"udpHost":"127.0.0.1","udpPort":8080,
+            "udpMaxDatagramBytes":1200,"udpIncomingPacketsPerSecond":120,"udpOutgoingPacketsPerSecond":120,
+            "udpGlobalPacketsPerSecond":4096,"udpReceiveBufferBytes":1048576,"udpSendBufferBytes":1048576,
+            "udpEndpointTtlMs":60000,"udpChallengeTtlMs":5000,"udpSendTimeoutMs":2,"udpReceiveErrorBackoffMs":100,
             "maxPayloadBytes":65536,"maxBufferedBytes":262144,"maxConnections":256,
             "maxConnectionsPerIp":32,"maxAccounts":1024,"maxRooms":128,"maxRoomPlayers":16,
             "maxMessagesPerSecond":120,"maxConnectionsPerMinute":60,"accountTtlMs":300000,
@@ -59,6 +62,25 @@ impl Config {
                     json!(s)
                 };
             }
+        }
+        // Preserve existing installations that used the shared message quota.
+        for (key, env) in [
+            (
+                "udpIncomingPacketsPerSecond",
+                "UDP_INCOMING_PACKETS_PER_SECOND",
+            ),
+            (
+                "udpOutgoingPacketsPerSecond",
+                "UDP_OUTGOING_PACKETS_PER_SECOND",
+            ),
+        ] {
+            if std::env::var_os(env).is_none() {
+                v[key] = v["maxMessagesPerSecond"].clone();
+            }
+        }
+        // 85 bytes are required for the handshake; 65507 is the IPv4 UDP payload ceiling.
+        if !(85..=65507).contains(&v["udpMaxDatagramBytes"].as_u64().unwrap()) {
+            bail!("Invalid setting: UDP_MAX_DATAGRAM_BYTES (expected 85..=65507)")
         }
         for arg in std::env::args().skip(1) {
             if arg == "dev" {

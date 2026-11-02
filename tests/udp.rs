@@ -14,12 +14,14 @@ struct Peer {
     cid: u64,
     secret: Vec<u8>,
     sequence: u64,
+    max_datagram: usize,
 }
 impl Peer {
     async fn open(client: &mut Client) -> Result<Self> {
         client.send("openUdp", json!(null))?;
         let data = client.wait("udpSession").await?;
-        assert_eq!(data["maxDatagramBytes"], 1200);
+        let max_datagram = data["maxDatagramBytes"].as_u64().unwrap() as usize;
+        assert_eq!(data["maxPayloadBytes"], max_datagram - 69);
         let socket = UdpSocket::bind("127.0.0.1:0").await?;
         socket
             .connect(("127.0.0.1", data["port"].as_u64().unwrap() as u16))
@@ -30,6 +32,7 @@ impl Peer {
             secret: base64::engine::general_purpose::STANDARD
                 .decode(data["secret"].as_str().unwrap())?,
             sequence: 0,
+            max_datagram,
         })
     }
     fn packet(&mut self, kind: u8, target: Uuid, payload: &[u8]) -> Vec<u8> {
@@ -51,7 +54,7 @@ impl Peer {
         Ok(packet)
     }
     async fn receive(&self, kind: u8) -> Result<Vec<u8>> {
-        let mut b = vec![0; 1500];
+        let mut b = vec![0; self.max_datagram];
         let n = tokio::time::timeout(WAIT, self.socket.recv(&mut b)).await??;
         b.truncate(n);
         assert!(n >= 69);
@@ -229,5 +232,40 @@ async fn unauthenticated_socket_cannot_exhaust_an_authenticated_players_udp_budg
     assert_eq!(&delivered[37..delivered.len() - 32], b"legitimate");
     assert_eq!(&delivered[21..37], Uuid::parse_str(host.id())?.as_bytes());
     b.silent().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn configured_datagram_size_is_advertised_and_enforced() -> Result<()> {
+    for size in [85, 2048] {
+        let server = Relay::start(json!({"udpEnabled":true,"udpPort":0,
+            "udpMaxDatagramBytes":size,"udpIncomingPacketsPerSecond":500,
+            "udpOutgoingPacketsPerSecond":600,"udpGlobalPacketsPerSecond":10000,
+            "udpReceiveBufferBytes":262144,"udpSendBufferBytes":262144,
+            "udpEndpointTtlMs":90000,"udpChallengeTtlMs":10000,
+            "udpSendTimeoutMs":10,"udpReceiveErrorBackoffMs":50}))
+        .await?;
+        let mut host = Client::connect(&server.url).await?;
+        let room = host.room(json!({})).await?;
+        let mut guest = Client::connect(&server.url).await?;
+        guest.enter(&room).await?;
+        host.send("openUdp", json!(null))?;
+        let advertised = host.wait("udpSession").await?;
+        assert_eq!(advertised["maxDatagramBytes"], size);
+        assert_eq!(advertised["incomingPacketsPerSecond"], 500);
+        assert_eq!(advertised["outgoingPacketsPerSecond"], 600);
+        assert_eq!(advertised["endpointTtlMs"], 90000);
+        assert_eq!(advertised["challengeTtlMs"], 10000);
+        let mut a = Peer::open(&mut host).await?;
+        let mut b = Peer::open(&mut guest).await?;
+        a.bind().await?;
+        b.bind().await?;
+        a.send(2, Uuid::nil(), &vec![42; size - 69]).await?;
+        assert_eq!(b.receive(5).await?.len(), size);
+        a.send(2, Uuid::nil(), &vec![42; size - 68]).await?;
+        b.silent().await;
+        a.send(2, Uuid::nil(), b"ok").await?;
+        b.receive(5).await?;
+    }
     Ok(())
 }

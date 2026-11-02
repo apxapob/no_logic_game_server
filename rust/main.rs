@@ -264,8 +264,8 @@ async fn run() -> Result<()> {
         // A bounded allowance for Internet bursts; OS defaults can drop a burst
         // well below the sustained packet-rate limit. Kernels may cap this hint.
         let options = socket2::SockRef::from(&socket);
-        options.set_recv_buffer_size(1024 * 1024)?;
-        options.set_send_buffer_size(1024 * 1024)?;
+        options.set_recv_buffer_size(cfg.n("udpReceiveBufferBytes"))?;
+        options.set_send_buffer_size(cfg.n("udpSendBufferBytes"))?;
         Some(socket)
     } else {
         None
@@ -298,8 +298,8 @@ async fn run() -> Result<()> {
         );
     }
     let (stop, mut stopped) = watch::channel(false);
-    let udp_task =
-        udp_socket.map(|socket| tokio::spawn(udp::run(socket, s.clone(), stopped.clone())));
+    let udp_task = udp_socket
+        .map(|socket| tokio::spawn(udp::run(socket, s.clone(), stopped.clone(), cfg.clone())));
     let admission = Arc::new(Mutex::new(Admission::default()));
     let ss = s.clone();
     let interval = cfg.n("maintenanceIntervalMs");

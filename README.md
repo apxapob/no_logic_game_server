@@ -288,6 +288,9 @@ Options and matching environment variables (milliseconds unless noted):
 | port | PORT | 8080 (0 allowed for tests) |
 | devMode | DEV_MODE | false |
 | sendDelayMs | SEND_DELAY_MS | 0 |
+| udpEnabled | UDP_ENABLED | false |
+| udpHost | UDP_HOST | 127.0.0.1 |
+| udpPort | UDP_PORT | 8080 (0 allowed for tests) |
 | maxPayloadBytes | MAX_PAYLOAD_BYTES | 65536 |
 | maxBufferedBytes | MAX_BUFFERED_BYTES | 262144 |
 | maxConnections | MAX_CONNECTIONS | 256 |
@@ -309,6 +312,9 @@ Options and matching environment variables (milliseconds unless noted):
 | logDirectory | LOG_DIRECTORY | ./logs |
 | logMaxBytes | LOG_MAX_BYTES | 1073741824 (1 GiB total) |
 | logFileMaxBytes | LOG_FILE_MAX_BYTES | 16777216 (16 MiB per file) |
+
+UDP packet sizes, separate incoming/outgoing/global quotas, socket buffers and
+timeouts are configurable; see the [complete UDP settings table](docs/udp.md#tunable-limits).
 
 Invalid numeric/boolean values are rejected; booleans are true/false. CLI `dev` and `delay=N` remain supported; NODE_ENV is not required. Unknown browser Origins, including literal `null`, are rejected; no-Origin native clients are permitted by default.
 

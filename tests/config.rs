@@ -29,6 +29,16 @@ async fn cli_configuration_validation() -> Result<()> {
         ("UDP_PORT", vec!["-1", "65536", "1.5", ""]),
         ("UDP_ENABLED", vec!["yes", "1"]),
         ("UDP_HOST", vec![""]),
+        ("UDP_MAX_DATAGRAM_BYTES", vec!["0", "84", "65508", "1.5"]),
+        ("UDP_INCOMING_PACKETS_PER_SECOND", vec!["0", "-1"]),
+        ("UDP_OUTGOING_PACKETS_PER_SECOND", vec!["0"]),
+        ("UDP_GLOBAL_PACKETS_PER_SECOND", vec!["0"]),
+        ("UDP_RECEIVE_BUFFER_BYTES", vec!["0"]),
+        ("UDP_SEND_BUFFER_BYTES", vec!["0"]),
+        ("UDP_ENDPOINT_TTL_MS", vec!["0"]),
+        ("UDP_CHALLENGE_TTL_MS", vec!["0"]),
+        ("UDP_SEND_TIMEOUT_MS", vec!["0"]),
+        ("UDP_RECEIVE_ERROR_BACKOFF_MS", vec!["0"]),
         ("MAX_CONNECTIONS", vec!["0", "-1", "3.5", "1x"]),
         ("ALLOW_NO_ORIGIN", vec!["yes", "1", ""]),
         ("VERBOSE_LOGS", vec!["TRUE"]),
@@ -66,6 +76,8 @@ async fn cli_configuration_validation() -> Result<()> {
             vec![],
         ),
         (vec![], vec!["dev", "delay=0"]),
+        (vec![("UDP_MAX_DATAGRAM_BYTES", "85")], vec![]),
+        (vec![("UDP_MAX_DATAGRAM_BYTES", "65507")], vec![]),
     ] {
         let out = run(&env, &args).await?;
         assert!(out.status.success(), "{:?}", out);

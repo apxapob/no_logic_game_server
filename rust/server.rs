@@ -406,7 +406,7 @@ impl Server {
             data["pushNotifications"] = json!(true)
         }
         if self.config.b("udpEnabled") {
-            data["udpRelay"] = json!({"version":1,"port":self.config.n("udpPort"),"maxDatagramBytes":crate::udp::MAX_PACKET});
+            data["udpRelay"] = json!({"version":1,"port":self.config.n("udpPort"),"maxDatagramBytes":self.config.n("udpMaxDatagramBytes"),"maxPayloadBytes":self.config.n("udpMaxDatagramBytes")-69,"endpointTtlMs":self.config.n("udpEndpointTtlMs"),"challengeTtlMs":self.config.n("udpChallengeTtlMs"),"incomingPacketsPerSecond":self.config.n("udpIncomingPacketsPerSecond"),"outgoingPacketsPerSecond":self.config.n("udpOutgoingPacketsPerSecond")});
         }
         self.send_c(cid, json!({"method":"onConnected","data":data}));
         if let Some(r) = self.players[&id]
@@ -893,7 +893,7 @@ impl Server {
                     use base64::Engine;
                     let secret = base64::engine::general_purpose::STANDARD.encode(session.secret);
                     self.connections.get_mut(&cid).unwrap().udp = Some(session);
-                    self.send_c(cid, json!({"method":"udpSession","data":{"connectionId":cid.to_string(),"secret":secret,"port":self.config.n("udpPort"),"version":1,"maxDatagramBytes":crate::udp::MAX_PACKET}}));
+                    self.send_c(cid, json!({"method":"udpSession","data":{"connectionId":cid.to_string(),"secret":secret,"port":self.config.n("udpPort"),"version":1,"maxDatagramBytes":self.config.n("udpMaxDatagramBytes"),"maxPayloadBytes":self.config.n("udpMaxDatagramBytes")-69,"endpointTtlMs":self.config.n("udpEndpointTtlMs"),"challengeTtlMs":self.config.n("udpChallengeTtlMs"),"incomingPacketsPerSecond":self.config.n("udpIncomingPacketsPerSecond"),"outgoingPacketsPerSecond":self.config.n("udpOutgoingPacketsPerSecond")}}));
                 }
                 return Ok(());
             }

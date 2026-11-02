@@ -203,3 +203,31 @@ async fn udp_is_disabled_by_default() -> Result<()> {
     peer.error("openUdp", json!(null), "udp_disabled").await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn unauthenticated_socket_cannot_exhaust_an_authenticated_players_udp_budget() -> Result<()> {
+    let server =
+        Relay::start(json!({"udpEnabled":true,"udpPort":0,"maxMessagesPerSecond":120})).await?;
+    let mut host = Client::connect(&server.url).await?;
+    let room = host.room(json!({})).await?;
+    let mut peer = Client::connect(&server.url).await?;
+    peer.enter(&room).await?;
+    let mut a = Peer::open(&mut host).await?;
+    let mut b = Peer::open(&mut peer).await?;
+    a.bind().await?;
+    b.bind().await?;
+    let attacker = UdpSocket::bind("127.0.0.1:0").await?;
+    for _ in 0..120 {
+        let mut forged = a.packet(2, Uuid::nil(), b"forged");
+        let end = forged.len() - 1;
+        forged[end] ^= 1;
+        attacker.send_to(&forged, a.socket.peer_addr()?).await?;
+    }
+    a.send(2, Uuid::parse_str(peer.id())?, b"legitimate")
+        .await?;
+    let delivered = b.receive(5).await?;
+    assert_eq!(&delivered[37..delivered.len() - 32], b"legitimate");
+    assert_eq!(&delivered[21..37], Uuid::parse_str(host.id())?.as_bytes());
+    b.silent().await;
+    Ok(())
+}

@@ -25,7 +25,8 @@ must preserve that port (or clients must override the endpoint).
 2. Send WebSocket `{"method":"openUdp","data":null}`. The `udpSession` response
    data contains `connectionId` (a decimal string encoding u64), `secret` (standard
    Base64, 32 random bytes), `version`, `port`, and `maxDatagramBytes`.
-   Calling again replaces the key and resets the UDP session.
+   Calling again replaces the key and resets the UDP session, but preserves the
+   WebSocket connection's UDP rate budgets and their current windows.
 3. From the UDP socket, send a signed **probe**, kind 0, with a zero address and
    16 padding bytes. The server returns kind 3 with a random 16-byte challenge.
 4. Verify the response signature, connection ID, kind, and replay sequence. Send
@@ -82,6 +83,9 @@ numbers inside the payload if stale movement updates should be discarded.
   of `MAX_MESSAGES_PER_SECOND` (default 120), including handshake packets. The
   listener admits at most 4096 datagrams/second globally. Over-budget, invalid,
   oversized and unauthenticated datagrams are silently dropped.
+  Failed HMAC verification and captured replays do not consume the identified
+  player's budget; unauthenticated traffic remains subject to the global limit.
+  Key rotation and `closeUdp`/`openUdp` do not reset either connection budget.
 - The listener requests 1 MiB receive/send socket buffers to absorb bounded bursts;
   the operating system may cap or adjust these values. This does not remove loss
   or replace application-level congestion control.

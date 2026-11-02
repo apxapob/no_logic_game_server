@@ -12,6 +12,8 @@ use tokio_tungstenite::tungstenite::Message;
 
 pub struct Connection {
     pub udp: Option<crate::udp::Session>,
+    pub udp_incoming_rate: crate::udp::Rate,
+    pub udp_outgoing_rate: crate::udp::Rate,
     pub tx: mpsc::UnboundedSender<Message>,
     pub queued: Arc<AtomicUsize>,
     pub player: Option<String>,
@@ -115,6 +117,8 @@ impl Server {
             cid,
             Connection {
                 udp: None,
+                udp_incoming_rate: crate::udp::Rate::default(),
+                udp_outgoing_rate: crate::udp::Rate::default(),
                 tx,
                 queued,
                 player: None,

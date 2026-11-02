@@ -66,6 +66,9 @@ test('delayed routed binary cannot escape its original membership', async t => {
   await enterRoom(b, room);
   const next = await createRoom(c, { binaryRelay: true });
   server.options.sendDelayMs = 80;
+  // The Rust adapter writes options over stdin, independently of socket traffic.
+  // Wait for that update before sending frames whose membership must be delayed.
+  await a.sync();
   a.send('leaveRoom');
   a.send('enterRoom', { roomId: next.roomId });
   a.ws.send(packet(null));

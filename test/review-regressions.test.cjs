@@ -2,7 +2,6 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const WebSocket = require('ws');
 const {
   eventually, startServer, rawClient, connect, createRoom, enterRoom, expectError, waitClosed,
 } = require('./helpers.cjs');
@@ -226,69 +225,4 @@ test('control quotas apply before authentication and to unsolicited pong floods'
     assert.equal(server.stats().accounts, authenticated ? 2 : 1);
     await healthy.barrier();
   }
-});
-
-test('paused-reader ping flood stays within the control quota and outbound queue budget', { skip: process.env.RELAY_BACKEND === 'rust' ? 'Node ws monkeypatch; Rust output budget has native tests' : false }, async t => {
-  const { server, url } = await startServer(t);
-  const healthy = await connect(t, url);
-  const abusive = await connect(t, url, {}, { autoPong: false });
-  // Observe the real server-side ws pong calls, without reading Server internals.
-  // Restore even on failure; node:test runs this file's top-level tests serially.
-  const original = WebSocket.prototype.pong;
-  let replies = 0;
-  let maximumQueued = 0;
-  WebSocket.prototype.pong = function (data, ...args) {
-    if (this._isServer) {
-      replies++;
-      maximumQueued = Math.max(maximumQueued, this.bufferedAmount + Buffer.byteLength(data) + 2);
-    }
-    return original.call(this, data, ...args);
-  };
-  abusive.ws.pause();
-  try {
-    for (let i = 0; i < 1000; i++) abusive.ws.ping(Buffer.alloc(125, i % 256));
-    await eventually(() => server.stats().online === 1, 'paused ping offender termination', 1000);
-  } finally {
-    abusive.ws.resume();
-    WebSocket.prototype.pong = original;
-  }
-  await waitClosed(abusive, 1000);
-  assert.ok(replies > 0 && replies <= 119, `Unexpected control reply count: ${replies}`);
-  assert.ok(maximumQueued <= 262144, `Control queue exceeded budget: ${maximumQueued}`);
-  await healthy.barrier();
-});
-
-test('manual control replies enforce a saturated byte queue independently of a higher rate quota', { skip: process.env.RELAY_BACKEND === 'rust' ? 'Node ws monkeypatch; Rust output budget has native tests' : false }, async t => {
-  const { server, url } = await startServer(t, { maxBufferedBytes: 512, maxMessagesPerSecond: 20000 });
-  const healthy = await connect(t, url);
-  const slow = await connect(t, url, {}, { autoPong: false });
-  const original = WebSocket.prototype.pong;
-  let heldSocket;
-  let replies = 0;
-  let maximumQueued = 0;
-  WebSocket.prototype.pong = function (data, ...args) {
-    if (this._isServer) {
-      // Hold the real writable queue; do not mock bufferedAmount. A paused
-      // reader alone need not fill the OS TCP buffers with this bounded input.
-      if (!heldSocket) { heldSocket = this._socket; heldSocket.cork(); }
-      replies++;
-      maximumQueued = Math.max(maximumQueued, this.bufferedAmount + Buffer.byteLength(data) + 2);
-    }
-    return original.call(this, data, ...args);
-  };
-  slow.ws.pause();
-  try {
-    // At most 1.25 MB of input, below the configured rate quota. Corking makes
-    // queue saturation deterministic across Windows/Linux TCP buffer sizes.
-    for (let i = 0; i < 10000; i++) slow.ws.ping(Buffer.alloc(125, i % 256));
-    await eventually(() => server.stats().online === 1, 'control byte-queue enforcement', 2500);
-  } finally {
-    if (heldSocket && !heldSocket.destroyed) heldSocket.uncork();
-    slow.ws.resume();
-    WebSocket.prototype.pong = original;
-  }
-  await waitClosed(slow);
-  assert.equal(replies, 4, 'Four 127-byte frames fit; the fifth must not be queued');
-  assert.ok(maximumQueued <= 512, `Control queue exceeded budget: ${maximumQueued}`);
-  await healthy.barrier();
 });

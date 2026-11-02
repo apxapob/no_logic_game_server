@@ -5,7 +5,6 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const { randomUUID } = require('node:crypto');
 const { spawn } = require('node:child_process');
-const path = require('node:path');
 const {
   eventually, startServer, rawClient, connect, createRoom, enterRoom, expectError, waitClosed, within, rawTcp,
 } = require('./helpers.cjs');
@@ -471,10 +470,10 @@ test('HTTP health, independent servers, idempotent shutdown and startup bind rej
   const pending = rawClient(t, first.url);
   await pending.opened;
   await createRoom(client);
-  const { Server } = require('../dist/Server.js');
+  const { Server } = require('./rust-server.cjs');
   const occupied = new Server({ host: '127.0.0.1', port: first.server.address().port, logger: () => {} });
   t.after(() => occupied.stop());
-  await assert.rejects(occupied.start(), error => error.code === 'EADDRINUSE');
+  await assert.rejects(occupied.start(), /Rust server exited/);
   await Promise.all([first.server.stop(), first.server.stop()]);
   await waitClosed(client);
   await waitClosed(pending);
@@ -488,8 +487,8 @@ test('HTTP health, independent servers, idempotent shutdown and startup bind rej
 });
 
 function cli(t, env) {
-  const child = spawn(process.execPath, [path.join(__dirname, '../dist/index.js')], {
-    env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'],
+  const child = spawn(require('./rust-server.cjs').binary, [], {
+    env: { ...process.env, SESSION_DIRECTORY: '', TELEMETRY_ENABLED: 'false', ...env }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
   for (const stream of [child.stdout, child.stderr]) {
@@ -590,32 +589,6 @@ test('active-session replacement sends ordered room snapshot without entry event
     assert.equal(server.stats().online, 2);
     replacement.assertNo('accountCreated');
   }
-});
-
-test('stop immediately after start rejects startup and settles with no listening address', async t => {
-  const { Server } = require('../dist/Server.js');
-  const server = new Server({ host: '127.0.0.1', port: 0, shutdownTimeoutMs: 100, logger: () => {} });
-  t.after(() => server.stop());
-  const startup = server.start();
-  // Attach the rejection handler before cancellation can reject the startup promise.
-  const rejected = assert.rejects(startup, /stop/i);
-  const stopping = server.stop();
-  await within(Promise.all([rejected, stopping]), 'startup cancellation', 600);
-  assert.equal(server.address(), null);
-  await within(server.stop(), 'repeated stop', 600);
-  assert.equal(server.stats().online, 0);
-  assert.equal(server.stats().pendingConnections, 0);
-});
-
-test('stop before start is idempotent and cannot subsequently open a listener', async t => {
-  const { Server } = require('../dist/Server.js');
-  const server = new Server({ host: '127.0.0.1', port: 0, logger: () => {} });
-  t.after(() => server.stop());
-  await within(Promise.all([server.stop(), server.stop()]), 'stop before start', 600);
-  await within(server.stop(), 'idempotent pre-start stop', 600);
-  assert.equal(server.address(), null);
-  await assert.rejects(server.start(), /stop/i);
-  assert.equal(server.address(), null);
 });
 
 test('shutdown bounds both silent TCP and incomplete HTTP transports', async t => {

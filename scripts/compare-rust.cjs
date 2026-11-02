@@ -4,22 +4,22 @@ const { createInterface } = require('node:readline');
 const { performance } = require('node:perf_hooks');
 const { writeFileSync, mkdirSync } = require('node:fs');
 const { join, dirname } = require('node:path');
-const WebSocket = require('ws');
+const WebSocket = require('../tools/dependencies.cjs')('ws');
 const resources = require('./process-resources.cjs');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const duration = Number(process.env.COMPARE_DURATION_MS || 5000);
 const rounds = Number(process.env.COMPARE_ROUNDS || 3);
 const pairs = Number(process.env.COMPARE_PAIRS || 16);
 const nativeBinaries = process.env.COMPARE_NATIVE_BINARIES ? JSON.parse(process.env.COMPARE_NATIVE_BINARIES) : null;
-const variants = nativeBinaries ? Object.keys(nativeBinaries) : ['node', 'rust'];
+const variants = nativeBinaries ? Object.keys(nativeBinaries) : ['rust'];
 const sizes = (process.env.COMPARE_SIZES || '512,32000').split(',').map(Number);
 const protocol = process.env.COMPARE_PROTOCOL || 'binary';
 if (!['binary', 'json'].includes(protocol)) throw new Error('COMPARE_PROTOCOL must be binary or json');
 async function server(backend) {
   const env = { ...process.env, HOST: '127.0.0.1', PORT: '0', SESSION_DIRECTORY: '', TELEMETRY_ENABLED: 'false', FCM_ENABLED: 'false', VERBOSE_LOGS: 'false', MAX_CONNECTIONS: '1024', MAX_CONNECTIONS_PER_IP: '1024', MAX_CONNECTIONS_PER_MINUTE: '10000', MAX_MESSAGES_PER_SECOND: '100000', IDLE_TIMEOUT_MS: '120000' };
   delete env.RELAY_TEST_CONTROL;
-  const command = nativeBinaries ? nativeBinaries[backend] : backend === 'node' ? process.execPath : join(__dirname, '../target/release/no-logic-game-server' + (process.platform === 'win32' ? '.exe' : ''));
-  const child = spawn(command, !nativeBinaries && backend === 'node' ? [join(__dirname, 'node-process.cjs')] : [], { env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+  const command = nativeBinaries ? nativeBinaries[backend] : join(__dirname, '../target/release/no-logic-game-server' + (process.platform === 'win32' ? '.exe' : ''));
+  const child = spawn(command, [], { env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
   child.stderr.on('data', b => process.stderr.write(b));
   const exited = new Promise(resolve => child.once('exit', resolve));
   const address = await new Promise((resolve, reject) => {

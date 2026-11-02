@@ -4,7 +4,7 @@ Push delivery is optional. Set `FCM_ENABLED=true` and
 `GOOGLE_APPLICATION_CREDENTIALS=/etc/general-connect/firebase-service-account.json`
 in the service environment. Keep that JSON outside the repository and release
 directories, readable only by the service account. Never paste its contents into
-logs, protocol payloads or Git. Firebase Admin uses Application Default Credentials.
+logs, protocol payloads or Git. The Rust server uses Application Default Credentials via `gcp_auth` and the FCM HTTP v1 API.
 No credentials are loaded and no FCM requests are made when push is disabled.
 
 An enabled server advertises `onConnected.data.pushNotifications: true`.
@@ -37,7 +37,7 @@ the server requires clients to register again. This does not provide corresponde
 games: rooms still disappear after the last active participant leaves. Do not
 restart production to enable this while rooms are active without coordinating it.
 
-Validation: `npm run check` includes push authorization, registration rotation,
+Validation: `npm --prefix tools run check` includes push authorization, registration rotation,
 revocation, foreground suppression, offline delivery, deduplication and log-redaction
 tests. A real-device smoke test additionally requires a valid service account and
 the target device's current FCM token.

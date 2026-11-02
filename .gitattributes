@@ -1,6 +1,2 @@
-# Auto detect text files and perform LF normalization
+# Normalize text files in Git.
 * text=auto
-
-# Preserve benchmark artifact hashes on Windows and Unix checkouts.
-docs/benchmarks/vps-20261102/*.json text eol=lf
-docs/benchmarks/vps-20261102/*.jsonl text eol=lf

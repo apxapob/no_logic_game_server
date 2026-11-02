@@ -2,18 +2,20 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateMessage } = require('../dist/MessageHandler.js');
 const { startServer, connect, createRoom, enterRoom, expectError } = require('./helpers.cjs');
 
-test('room settings validate bounds and require at least one setting', () => {
+test('room settings validate bounds and require at least one setting', async t => {
+  const { url } = await startServer(t);
+  const client = await connect(t, url);
+  await createRoom(client);
   for (const data of [{}, null, { maxPlayers: 0 }, { maxPlayers: 17 }, { maxPlayers: 2.5 },
     { maxPlayers: '4' }, { password: 123 }, { password: 'x'.repeat(129) },
     { name: '' }, { name: '   ' }, { name: null }, { name: 123 }, { name: 'x'.repeat(65) }]) {
-    assert.equal(validateMessage({ method: 'updateRoom', data }, 16, 100), false);
+    await expectError(client, 'updateRoom', data, 'invalid_message');
   }
   for (const data of [{ maxPlayers: 2 }, { password: null }, { password: '' }, { password: 'secret' },
     { name: 'Renamed room' }, { name: 'x'.repeat(64) }]) {
-    assert.equal(validateMessage({ method: 'updateRoom', data }, 16, 100), true);
+    client.send('updateRoom', data); await client.wait('roomUpdated');
   }
 });
 

@@ -3,6 +3,7 @@
 const { spawn } = require('node:child_process');
 const { createInterface } = require('node:readline');
 const path = require('node:path');
+const binary = process.env.RUST_SERVER_BINARY || path.join(__dirname, '../target/debug/no-logic-game-server' + (process.platform === 'win32' ? '.exe' : ''));
 const instances = new Map();
 let sequence = 0;
 class Server {
@@ -11,8 +12,8 @@ class Server {
     this.rooms = new Map();
     this.syncs = new Map();
     this.store = { jobs: new Map(),
-      load: id => new (require('../dist/SessionStore').SessionStore)(options.sessionDirectory, options.sessionMaxBytes ?? 1024 ** 3).load(id),
-      account: id => new (require('../dist/SessionStore').SessionStore)(options.sessionDirectory, options.sessionMaxBytes ?? 1024 ** 3).account(id),
+      load: id => new (require('./storage-fixtures.cjs').SessionStore)(options.sessionDirectory, options.sessionMaxBytes ?? 1024 ** 3).load(id),
+      account: id => new (require('./storage-fixtures.cjs').SessionStore)(options.sessionDirectory, options.sessionMaxBytes ?? 1024 ** 3).account(id),
     };
     this.options = new Proxy(options, { set: (target, key, value) => {
       target[key] = value;
@@ -39,7 +40,7 @@ class Server {
       await new Promise(resolve => this.pushHttp.listen(0, '127.0.0.1', resolve));
       env.FCM_ENABLED = 'true'; env.RELAY_TEST_PUSH_URL = 'http://127.0.0.1:' + this.pushHttp.address().port;
     }
-    this.child = spawn(process.env.RUST_SERVER_BINARY || path.join(__dirname, '../target/debug/no-logic-game-server' + (process.platform === 'win32' ? '.exe' : '')), [], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+    this.child = spawn(binary, [], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     this.exited = new Promise(resolve => this.child.once('exit', resolve));
     this.starting = new Promise((resolve, reject) => {
       this.child.once('error', reject);
@@ -82,4 +83,4 @@ class Server {
     })();
   }
 }
-module.exports = { Server, sync: url => instances.get(Number(new URL(url).port))?.sync() ?? Promise.resolve() };
+module.exports = { Server, binary, sync: url => instances.get(Number(new URL(url).port))?.sync() ?? Promise.resolve() };

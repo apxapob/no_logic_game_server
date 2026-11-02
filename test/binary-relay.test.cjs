@@ -3,7 +3,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { setTimeout: delay } = require('node:timers/promises');
 const { startServer, connect, createRoom, enterRoom, expectError } = require('./helpers.cjs');
-const { binaryTarget, binaryFrom } = require('../dist/BinaryRelay.js');
 
 function packet(target, payload = Buffer.from([255, 0, 128, 42])) {
   const bytes = Buffer.alloc(17 + payload.length);
@@ -78,14 +77,4 @@ test('delayed routed binary cannot escape its original membership', async t => {
   c.assertNo('binary');
   a.ws.send(packet(c.account.playerId));
   assert.equal((await c.wait('binary')).data.subarray(1, 17).toString('hex'), a.account.playerId.replaceAll('-', ''));
-});
-
-test('binary UUID wire order preserves leading zeroes and uses exactly 16 address bytes', () => {
-  const id = '00112233-4455-4677-8899-aabbccddeeff';
-  const bytes = Buffer.from([1, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x46, 0x77,
-    0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x42]);
-  assert.equal(binaryTarget(bytes), id);
-  assert.deepEqual(binaryFrom(packet(null, Buffer.from([0x42])), id.toUpperCase()), bytes);
-  assert.equal(binaryTarget(packet(null)), null);
-  assert.equal(binaryTarget(bytes.subarray(0, 17)), undefined);
 });

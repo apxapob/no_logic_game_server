@@ -1,0 +1,27 @@
+{
+  "name": "relay-development-tools",
+  "private": true,
+  "description": "Optional test and load clients for the Rust server; no Node server implementation.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "lint": "node run.cjs lint",
+    "test": "node run.cjs test",
+    "check": "npm run lint && node run.cjs check",
+    "demo": "node ../scripts/demo.mjs",
+    "benchmark": "node ../scripts/compare-rust.cjs",
+    "memory": "node run.cjs memory"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0"
+  },
+  "overrides": {
+    "minimatch": "11.0.3"
+  }
+}

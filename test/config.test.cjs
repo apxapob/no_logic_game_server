@@ -1,71 +1,29 @@
 'use strict';
-
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { configFromEnv } = require('../dist/config.js');
-
-// Explicit environment/argv arguments keep these tests isolated from the runner's
-// process environment. The implementation contract does not require NODE_ENV.
-const numericSettings = [
-  'SEND_DELAY_MS', 'MAX_PAYLOAD_BYTES', 'MAX_BUFFERED_BYTES',
-  'MAX_CONNECTIONS', 'MAX_CONNECTIONS_PER_IP', 'MAX_ACCOUNTS', 'MAX_ROOMS',
-  'MAX_ROOM_PLAYERS', 'MAX_MESSAGES_PER_SECOND', 'MAX_CONNECTIONS_PER_MINUTE',
-  'ACCOUNT_TTL_MS', 'HEARTBEAT_INTERVAL_MS', 'IDLE_TIMEOUT_MS',
-  'AUTH_TIMEOUT_MS', 'MAINTENANCE_INTERVAL_MS', 'SHUTDOWN_TIMEOUT_MS',
-];
-
-function config(env = {}, argv = []) { return configFromEnv(env, argv); }
-
-test('configuration loads without NODE_ENV and permits ephemeral port and zero delay', () => {
-  const options = config({ HOST: '127.0.0.1', PORT: '0', SEND_DELAY_MS: '0' });
-  assert.equal(options.host, '127.0.0.1');
-  assert.equal(options.port, 0);
-  assert.equal(options.sendDelayMs, 0);
-});
-
-test('configuration parses all documented numeric limits', () => {
-  const env = Object.fromEntries(numericSettings.map(key => [key, '123']));
-  const options = config(env);
-  for (const key of numericSettings) {
-    const camelCase = key.toLowerCase().replace(/_([a-z])/g, (_, char) => char.toUpperCase());
-    assert.equal(options[camelCase], 123, key);
+const { spawnSync } = require('node:child_process');
+const { binary } = require('./rust-server.cjs');
+function run(env = {}, args = []) {
+  const result = spawnSync(binary, args, { input: 'stop\n', encoding: 'utf8', timeout: 5000, windowsHide: true,
+    env: { ...process.env, HOST: '127.0.0.1', PORT: '0', SESSION_DIRECTORY: '', VERBOSE_LOGS: 'false', FCM_ENABLED: 'false', TELEMETRY_ENABLED: 'false', ...env } });
+  if (result.error) throw result.error;
+  return result;
+}
+test('Rust CLI rejects malformed numeric limits and boolean settings', () => {
+  for (const [key, values] of Object.entries({ PORT: ['-1', '65536', '1.5', '80x', 'NaN', ''], MAX_CONNECTIONS: ['0', '-1', '3.5', '1x'], ALLOW_NO_ORIGIN: ['yes', '1', ''], VERBOSE_LOGS: ['TRUE'], MAX_SESSION_BYTES: ['2147483648'], SEND_DELAY_MS: ['-1'] })) {
+    for (const value of values) assert.notEqual(run({ [key]: value }).status, 0, `${key}=${value}`);
   }
 });
-
-test('numeric environment values reject nonfinite, fractional, negative and partial inputs', () => {
-  for (const key of ['PORT', ...numericSettings]) {
-    for (const value of ['NaN', 'Infinity', '-1', '1.5', '12ms', '']) {
-      assert.throws(() => config({ [key]: value }), undefined, `${key}=${JSON.stringify(value)}`);
-    }
+test('Rust CLI accepts zero port/delay, native origin policy and legacy flags', () => {
+  for (const [env, args] of [[{ SEND_DELAY_MS: '0', ALLOW_NO_ORIGIN: 'false', ALLOWED_ORIGINS: ' https://game.example.com, http://localhost:8081 ' }, []], [{}, ['dev', 'delay=0']]]) {
+    const result = run(env, args); assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /server.listening/);
   }
-  for (const value of ['65536', '1000000000000000000000']) {
-    assert.throws(() => config({ PORT: value }));
-  }
-  for (const key of numericSettings.filter(key => key !== 'SEND_DELAY_MS')) {
-    assert.throws(() => config({ [key]: '0' }), undefined, `${key} must be positive`);
-  }
+  for (const arg of ['delay=', 'delay=-1', 'delay=1.5', 'delay=1x']) assert.notEqual(run({}, [arg]).status, 0, arg);
 });
-
-test('boolean configuration accepts true/false and rejects ambiguous values', () => {
-  for (const [key, property] of [['ALLOW_NO_ORIGIN', 'allowNoOrigin'], ['DEV_MODE', 'devMode']]) {
-    assert.equal(config({ [key]: 'true' })[property], true);
-    assert.equal(config({ [key]: 'false' })[property], false);
-    for (const value of ['1', '0', 'yes', 'no', '']) {
-      assert.throws(() => config({ [key]: value }), undefined, `${key}=${JSON.stringify(value)}`);
-    }
-  }
-});
-
-test('allowed origins CSV trims entries and native-client policy is explicit', () => {
-  const options = config({ ALLOWED_ORIGINS: 'https://one.example, https://two.example', ALLOW_NO_ORIGIN: 'false' });
-  assert.deepEqual(options.allowedOrigins, ['https://one.example', 'https://two.example']);
-  assert.equal(options.allowNoOrigin, false);
-});
-
-test('legacy CLI dev and delay=N remain supported, invalid delays fail', () => {
-  assert.equal(config({}, ['dev', 'delay=25']).devMode, true);
-  assert.equal(config({}, ['dev', 'delay=25']).sendDelayMs, 25);
-  for (const value of ['NaN', '-1', '1.5', 'abc', 'Infinity']) {
-    assert.throws(() => config({}, [`delay=${value}`]));
-  }
+test('Rust CLI validates Origins and telemetry while the kill switch ignores unused settings', () => {
+  for (const origin of ['null', 'https://game.example.com/path', 'ftp://example.com']) assert.notEqual(run({ ALLOWED_ORIGINS: origin }).status, 0);
+  const invalid = { TELEMETRY_URL: 'http://invalid.example/path?secret=x', TELEMETRY_WRITE_KEY: 'unused', TELEMETRY_INTERVAL_MS: 'bad' };
+  assert.equal(run({ ...invalid, TELEMETRY_ENABLED: 'false' }).status, 0);
+  assert.notEqual(run({ ...invalid, TELEMETRY_ENABLED: 'true' }).status, 0);
 });

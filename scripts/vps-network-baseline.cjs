@@ -1,5 +1,5 @@
 'use strict';
-const WebSocket = require('ws');
+const WebSocket = require('../tools/dependencies.cjs')('ws');
 const { performance } = require('node:perf_hooks');
 const url = process.argv[2];
 if (!url || new URL(url).protocol !== 'wss:') throw new Error('Pass an authorized WSS endpoint');

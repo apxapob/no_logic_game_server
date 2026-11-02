@@ -17,13 +17,13 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - run: npm ci
-      - run: npm run check
-      - run: npm audit
+          cache-dependency-path: tools/package-lock.json
+      - run: npm --prefix tools ci
+      - run: npm --prefix tools audit
       # Keep warning-denied checks on the locally validated toolchain.
       - run: rustup toolchain install 1.96.0 --profile minimal --component rustfmt,clippy
       - run: rustup default 1.96.0
-      - run: npm run check:rust
+      - run: npm --prefix tools run check
       - name: Check connection and session cleanup
         run: node scripts/memory-churn.cjs
         env:

@@ -2,9 +2,9 @@
 
 const assert = require('node:assert/strict');
 const { setTimeout: delay } = require('node:timers/promises');
-const WebSocket = require('ws');
+const WebSocket = require('../tools/dependencies.cjs')('ws');
 const net = require('node:net');
-const { Server } = process.env.RELAY_BACKEND === 'rust' ? require('./rust-server.cjs') : require('../dist/Server.js');
+const { Server } = require('./rust-server.cjs');
 
 const TIMEOUT = 2500;
 
@@ -33,7 +33,7 @@ async function startServer(t, options = {}) {
 
 class Client {
   constructor(url, options = {}) {
-    this.sync = process.env.RELAY_BACKEND === 'rust' ? () => require('./rust-server.cjs').sync(url) : () => Promise.resolve();
+    this.sync = () => require('./rust-server.cjs').sync(url);
     this.messages = [];
     this.waiters = [];
     this.closed = false;

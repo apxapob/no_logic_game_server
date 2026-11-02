@@ -110,19 +110,6 @@ test('graceful shutdown flushes active rooms and expired accounts can authentica
   const other = await connect(t, next.url, guest.account);
   await enterRoom(other, room);
 });
-test('disk eviction uses last state update, protects active rooms, and removes notification jobs', async t => {
-  const { SessionStore } = require('../dist/SessionStore');
-  const { Room } = require('../dist/Room');
-  const store = new SessionStore(directory(t), 1);
-  const older = new Room('older', randomUUID(), 2, null, null);
-  const newer = new Room('newer', randomUUID(), 2, null, null);
-  older.updatedAt = 200; newer.updatedAt = 100;
-  store.save(older); store.save(newer);
-  store.setJobs(newer.roomId, [{ eventId: 'x', at: 1, to: [], title: 'x', body: 'x', done: [], retryAt: 0, scheduled: true }]);
-  assert.deepEqual(store.prune(new Set([older.roomId])), [newer.roomId]);
-  assert.ok(store.load(older.roomId)); assert.equal(store.load(newer.roomId), undefined);
-  assert.equal(store.jobs.has(newer.roomId), false);
-});
 test('offline deadline notification survives restart, is cancelled/replaced, and is sent once', async t => {
   const dir = directory(t), sent = [];
   const pushSender = async (token, notification) => { sent.push({ token, ...notification }); return 'sent'; };
@@ -161,7 +148,7 @@ test('queued push retries after restart and a foreground player in another room 
   } });
   await eventually(() => attempts === 1);
   await server.stop();
-  const { SessionStore } = require('../dist/SessionStore');
+  const { SessionStore } = require('./storage-fixtures.cjs');
   const store = new SessionStore(dir, 1024 ** 3);
   const jobs = store.jobs.get(room.roomId);
   assert.equal(jobs.length, 1);
@@ -247,9 +234,9 @@ test('interrupted, repeated, and expired chunk uploads leave the previous state 
 
 test('200 sleeping sessions remain off the live-room map; batch lookups and every payload survive restart', async t => {
   const dir = directory();
-  const { SessionStore } = require('../dist/SessionStore');
-  const { Room } = require('../dist/Room');
-  const { Player } = require('../dist/Player');
+  const { SessionStore } = require('./storage-fixtures.cjs');
+  const { Room } = require('./storage-fixtures.cjs');
+  const { Player } = require('./storage-fixtures.cjs');
   const store = new SessionStore(dir, 1024 ** 3);
   const owner = new Player('Capacity'); store.saveAccount(owner);
   const bytes = randomBytes(100000), ids = [];
@@ -296,11 +283,10 @@ test('a corrupt room does not prevent reading another room or checking an absent
 });
 
 test('hard process kill preserves sleeping state and active changes roll back to the last disk save', async t => {
-  const { fork } = require('node:child_process');
   const { once } = require('node:events');
   const dir = directory();
   async function child() {
-    if (global.process.env.RELAY_BACKEND === 'rust') {
+    {
       const binary = global.process.env.RUST_SERVER_BINARY || join(__dirname, '../target/debug/no-logic-game-server' + (global.process.platform === 'win32' ? '.exe' : ''));
       const child = require('node:child_process').spawn(binary, [], { env: { ...global.process.env, HOST: '127.0.0.1', PORT: '0', SESSION_DIRECTORY: dir, TELEMETRY_ENABLED: 'false' }, stdio: ['pipe', 'pipe', 'inherit'] });
       const exited = once(child, 'exit');
@@ -310,11 +296,6 @@ test('hard process kill preserves sleeping state and active changes roll back to
       }));
       return { url, kill: async () => { child.kill('SIGKILL'); await exited; } };
     }
-    const process = fork(join(__dirname, 'fixtures/session-child.cjs'), [dir], { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
-    const exited = once(process, 'exit');
-    t.after(async () => { if (process.exitCode === null && process.signalCode === null) process.kill('SIGKILL'); await exited; });
-    const [{ url }] = await once(process, 'message');
-    return { url, kill: async () => { process.kill('SIGKILL'); await exited; } };
   }
   let relay = await child();
   let host = await connect(t, relay.url);
@@ -344,7 +325,7 @@ test('hard process kill preserves sleeping state and active changes roll back to
 
 test('a corrupt notification file does not prevent startup or delivery for healthy rooms', async t => {
   const dir = directory();
-  const { SessionStore } = require('../dist/SessionStore');
+  const { SessionStore } = require('./storage-fixtures.cjs');
   const store = new SessionStore(dir, 1024 ** 3);
   const healthy = randomUUID(), corrupt = randomUUID(), malformed = randomUUID();
   store.setJobs(healthy, [{ eventId: 'valid', at: 0, to: [], title: 'G', body: 'T', done: [], retryAt: 0, scheduled: true }]);
@@ -356,20 +337,6 @@ test('a corrupt notification file does not prevent startup or delivery for healt
   assert.equal(server.store.jobs.has(corrupt), false);
   assert.equal(server.store.jobs.has(malformed), false);
   assert.equal(logs.filter(text => text.includes('notification file')).length, 2);
-});
-
-test('quota cleanup can evict a corrupt room without blocking startup or deleting a healthy room', () => {
-  const dir = directory();
-  const { SessionStore } = require('../dist/SessionStore');
-  const { Room } = require('../dist/Room');
-  const store = new SessionStore(dir, 1024 ** 3);
-  const room = new Room('healthy', randomUUID(), 2, null, null);
-  room.sessionState = Buffer.from('healthy'); store.save(room);
-  const corruptId = randomUUID();
-  writeFileSync(join(dir, 'rooms', `${corruptId}.bin`), Buffer.alloc(10000, 255));
-  const restored = new SessionStore(dir, 1000);
-  assert.equal(restored.load(corruptId), undefined);
-  assert.equal(restored.load(room.roomId).sessionState.toString(), 'healthy');
 });
 
 test('one account can switch between saved rooms without mixing state, roster, or revision', async t => {

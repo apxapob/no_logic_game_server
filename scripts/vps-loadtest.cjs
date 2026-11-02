@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { performance, monitorEventLoopDelay } = require('node:perf_hooks');
 const { randomUUID } = require('node:crypto');
-const WebSocket = require('ws');
+const WebSocket = require('../tools/dependencies.cjs')('ws');
 const cfg = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const run = randomUUID().slice(0, 8);
 const output = path.resolve(cfg.output);
@@ -189,7 +189,7 @@ async function stage(count, duration, measured) {
 async function main() {
   if (!['wss:', 'ws:'].includes(new URL(cfg.url).protocol)) throw new Error('Expected WebSocket URL');
   fs.mkdirSync(path.dirname(output), { recursive: true });
-  emit({ event: 'start', run, config: cfg, node: process.version, wsVersion: require('ws/package.json').version, time: new Date().toISOString() });
+  emit({ event: 'start', run, config: cfg, node: process.version, wsVersion: require('../tools/dependencies.cjs')('ws/package.json').version, time: new Date().toISOString() });
   for (const count of cfg.levels) {
     await ramp(count);
     await stage(count, cfg.warmupSeconds ?? 5, false);

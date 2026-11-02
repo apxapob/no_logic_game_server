@@ -6,7 +6,6 @@ const { mkdtempSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { connect, createRoom, enterRoom, eventually } = require('./helpers.cjs');
-const NodeServer = require('../dist/Server').Server;
 const RustServer = require('./rust-server.cjs').Server;
 async function launch(t, Backend, dir = '') {
   // This test does not exercise maintenance timing. The production interval avoids
@@ -38,16 +37,16 @@ async function load(c) {
   }
   return { ...info, bytes: Buffer.concat(chunks) };
 }
-test('Node → Rust → Node preserves credentials, roster, opaque state and revision', { skip: process.env.RELAY_BACKEND !== 'rust' }, async t => {
+test('Rust restarts preserve credentials, roster, opaque state and revision', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'relay-cross-engine-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  let instance = await launch(t, NodeServer, dir);
+  let instance = await launch(t, RustServer, dir);
   let owner = await connect(t, instance.url); const credentials = owner.account;
   const room = await createRoom(owner, { binaryRelay: true, password: 'room-secret' });
   owner.send('startGame', { fixedRoster: true, hostMigration: true, persistent: true, bootstrap: ['unchanged', 7] }); await owner.wait('gameStarted');
   let expected = randomBytes(190000); await save(owner, expected, 0, 0); owner.send('leaveRoom');
   await eventually(() => instance.server.stats().rooms === 0); await instance.server.stop();
-  for (const [i, Backend] of [RustServer, NodeServer].entries()) {
+  for (const [i, Backend] of [RustServer, RustServer].entries()) {
     instance = await launch(t, Backend, dir); owner = await connect(t, instance.url, credentials);
     owner.send('getSavedRooms', { ids: [room.roomId] }); assert.ok((await owner.wait('savedRoom')).data.room);
     const entered = await enterRoom(owner, room); const restored = await load(owner);
@@ -57,12 +56,12 @@ test('Node → Rust → Node preserves credentials, roster, opaque state and rev
     await instance.server.stop();
   }
 });
-test('Rust accepts numeric JSON forms emitted by non-JavaScript clients', { skip: process.env.RELAY_BACKEND !== 'rust' }, async t => {
+test('Rust accepts numeric JSON forms emitted by non-JavaScript clients', async t => {
   const { url } = await launch(t, RustServer); const c = await connect(t, url);
   c.ws.send('{"method":"createRoom","data":{"name":"C# numeric forms","maxPlayers":4.0}}');
   assert.equal((await c.wait('onRoomEnter')).data.maxPlayers, 4);
 });
-test('VampireTowers and ForTheWTF legacy F7/F8 tunnel frames remain byte-for-byte opaque', { skip: process.env.RELAY_BACKEND !== 'rust' }, async t => {
+test('VampireTowers and ForTheWTF legacy F7/F8 tunnel frames remain byte-for-byte opaque', async t => {
   const { url } = await launch(t, RustServer); const host = await connect(t, url), guest = await connect(t, url);
   const room = await createRoom(host); await enterRoom(guest, room);
   host.send('startGame', { fixedRoster: true }); await guest.wait('gameStarted');

@@ -2,16 +2,17 @@
 
 WebSocket rooms for client-authoritative games, with optional opaque session persistence. The server relays and stores data; it does not validate gameplay or prevent cheating.
 
-An experimental compatible Rust executable is available on this branch. Build with
-`npm run build:rust`, run with `npm run start:rust`, and compare with
-`npm run benchmark:compare`. See [Rust compatibility, validation and measurements](docs/rust-port.md).
-The Node implementation remains the reference and `npm start` is unchanged.
+The server is a standalone Rust executable. Build with `cargo build --release --locked`
+and run `target/release/no-logic-game-server` (`.exe` on Windows).
+See [deployment and rollback](docs/deployment.md). Node.js is used only by optional
+JavaScript tests, the demo HTTP server and load generators under `tools/`.
+The retired Node implementation remains available in Git history (last combined
+revision `8d4539a`), not in the current source tree.
 
 ## Persistent sessions
 
 The CLI enables storage in `SESSION_DIRECTORY` (default `./sessions`). Use an absolute,
-writable directory outside release checkouts in production. Embedded `new Server()`
-instances enable storage by supplying `sessionDirectory`. `onConnected` advertises
+writable directory outside release checkouts in production. `onConnected` advertises
 `persistentSessions: true`; game clients request it with
 `startGame: {fixedRoster:true, hostMigration:true, persistent:true, ...}`.
 General requests this automatically for every new online match.
@@ -63,35 +64,52 @@ individual transfers, not total RAM. The server never decompresses the state.
 
 ## Run
 
-Use Node **24+** and npm. TypeScript is intentionally capped at **~6.0.3**: typescript-eslint 8.71.1 supports TypeScript <6.1, not TypeScript 7. Node types stay on major 24.
+Use Rust (CI: 1.96.0). The runtime has no JavaScript dependency:
 
 ```sh
-npm ci
-npm run build
-npm start
-# Development instead of the built server:
-npm run dev
-# In another terminal:
-npm run demo
+cargo build --release --locked
+cargo run --release --locked
+# Development flags, if needed:
+cargo run --locked -- dev delay=50
+```
+
+Optional developer tools require Node **24+**:
+
+```sh
+npm --prefix tools ci
+npm --prefix tools run demo
 ```
 
 Open http://127.0.0.1:8081 in two tabs (not a file URL). Move the pointer to play Pong. The owner simulates; the other player sends coalesced input. Physics uses 120 Hz fixed steps; networking is capped at 20 Hz. Waiting solo owners check matchmaking every two seconds and converge on the smallest open demo room ID when tabs start simultaneously. Reconnect prioritizes an eligible started demo room. Credentials stay in sessionStorage, never URLs or logs. Duplicated tabs use a BroadcastChannel account claim to avoid sharing a live account. Expired credentials require explicitly creating a new guest. Use separate browser profiles if BroadcastChannel is unavailable.
 
 ```sh
-npm run typecheck
-npm run lint
-npm test                  # builds, then node --test test/*.test.cjs
-npm run check             # typecheck, lint, tests
-npm run benchmark         # bounded local smoke, not a capacity guarantee
-npm audit
+cargo fmt --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
+npm --prefix tools run check  # lint, native tests, build and Rust process/wire tests
+npm --prefix tools run benchmark  # release binary; bounded local loopback load
+npm --prefix tools audit
 ```
 
-`package.json` pins transitive `glob` and `minimatch` versions through npm overrides
-for [GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4)
-and [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
-Remove these overrides once the ESLint/typescript-eslint and Firebase dependency
-chains resolve patched versions on their own; verify with `npm ci`, `npm run check`,
-and `npm audit`. Do not use `npm audit fix --force` to downgrade the lint toolchain.
+`tools/package.json` contains only test/load tooling dependencies (`ws`, ESLint).
+Its `minimatch` override retains the reviewed dependency security fix. The lockfile
+makes CI reproducible. No TypeScript compiler or Firebase Admin package is required.
+
+Tests exercise authentication, quotas, room lifecycle, JSON/binary wire contracts,
+persistence/restarts, mock FCM, logs, configuration and process shutdown against
+Rust. Native tests cover internal ownership, queue limits, storage and telemetry.
+Old tests of Node-specific classes and monkeypatches were removed with that server;
+this is no longer a Node/Rust differential suite. `test/storage-fixtures.cjs` only
+reads/writes persisted file-format fixtures; it does not implement a relay.
+
+The default benchmark tests Rust. To compare retained native releases, set
+`COMPARE_NATIVE_BINARIES` to a JSON map of labels to executable paths.
+`COMPARE_PROTOCOL=json` selects JSON (default: binary); `COMPARE_ROUNDS`,
+`COMPARE_DURATION_MS`, `COMPARE_PAIRS`, and `COMPARE_SIZES` control the workload.
+Reports default to ignored `test-results/rust-comparison.json`. Each RTT includes
+two relay hops. Local loopback throughput is not a production capacity estimate.
+`npm --prefix tools run memory` runs repeated connection/session cleanup against
+the release binary; `RUST_SERVER_BINARY` can select another build.
 
 ## Breaking authentication migration
 
@@ -208,7 +226,10 @@ behind the saturated queue.
 
 ## Runtime and configuration
 
-CommonJS: `const {Server} = require('./dist/Server.js')`. `new Server(options)` does not listen; `await server.start()` rejects on startup failure. `server.address()` returns AddressInfo/null; `await server.stop()` is idempotent and clears resources within its deadline. Multiple instances are supported. `server.stats()` returns `{accounts,online,rooms,pendingConnections}`. `GET /healthz` returns `{status:'ok',...}` while running; other HTTP paths return 404; WebSocket path is `/`.
+The binary exposes `GET /healthz` with `{status,accounts,online,rooms,pendingConnections}`;
+other HTTP paths return 404 and the WebSocket path is `/`. Configure it with environment
+variables. SIGTERM on Unix, Ctrl+C, or `stop` on stdin initiates graceful shutdown.
+Multiple processes need separate ports and storage directories.
 
 Options and matching environment variables (milliseconds unless noted):
 
@@ -235,17 +256,16 @@ Options and matching environment variables (milliseconds unless noted):
 | shutdownTimeoutMs | SHUTDOWN_TIMEOUT_MS | 1000 |
 | allowedOrigins | ALLOWED_ORIGINS (CSV) | http://127.0.0.1:8081,http://localhost:8081 |
 | allowNoOrigin | ALLOW_NO_ORIGIN | true |
-| logger | programmatic only | no-op (CLI uses console, or rotating files in verbose mode) |
 | verboseLogs | VERBOSE_LOGS | false |
 | logDirectory | LOG_DIRECTORY | ./logs |
 | logMaxBytes | LOG_MAX_BYTES | 1073741824 (1 GiB total) |
 | logFileMaxBytes | LOG_FILE_MAX_BYTES | 16777216 (16 MiB per file) |
 
-`configFromEnv` is exported by `src/config.ts`. Invalid numeric/boolean values are rejected; booleans are true/false. CLI `dev` and `delay=N` remain supported; NODE_ENV is not required. Unknown browser Origins, including literal `null`, are rejected; no-Origin native clients are permitted by default.
+Invalid numeric/boolean values are rejected; booleans are true/false. CLI `dev` and `delay=N` remain supported; NODE_ENV is not required. Unknown browser Origins, including literal `null`, are rejected; no-Origin native clients are permitted by default.
 
 Connection and per-IP attempt limits include raw TCP/HTTP transports, including health probes, not just authenticated WebSockets. Incomplete and keep-alive HTTP transports are also bounded by `authTimeoutMs`; reserve quota headroom for monitoring. Message rate is per connection. Delayed global/room-transition commands preserve order; queued room-scoped traffic is discarded if membership or session changes.
 
-Offline accounts expire after TTL. Explicit-ID `getPlayers` requests can return retained offline public DTOs until expiry; no-ID requests return only online players. Disconnect during a started match may preserve reconnect eligibility **only while another member remains active**. Last active disconnect disposes the room; restarts lose all accounts and rooms. State synchronization and owner handoff are the game's responsibility.
+Offline accounts expire after TTL. Explicit-ID `getPlayers` requests can return retained offline public DTOs until expiry; no-ID requests return only online players. Disconnect during a started match may preserve reconnect eligibility **only while another member remains active**. Without persistence, last active disconnect disposes the room and restarts lose in-memory accounts and rooms. Persistent games instead save their state for later recovery. State synchronization and owner handoff are the game's responsibility.
 
 Room membership is released when the connection closes, or by the next maintenance tick
 if the socket is still closing. Cleanup does not wait for the WebSocket close handshake
@@ -259,7 +279,7 @@ See [deployment](docs/deployment.md) for TLS, origin and proxy limitations. No e
 Enable `VERBOSE_LOGS=true` when starting the CLI. For example, on Linux:
 
 ```sh
-VERBOSE_LOGS=true LOG_DIRECTORY=/var/log/no-logic-game-server npm start
+VERBOSE_LOGS=true LOG_DIRECTORY=/var/log/no-logic-game-server target/release/no-logic-game-server
 ```
 
 The directory must be writable by the service user. The CLI writes JSON Lines to
@@ -306,9 +326,7 @@ small byte budgets may not even fit a diagnostic marker.
 Verbose records go only to these files, avoiding an unbounded duplicate in stdout or
 the system journal. With `VERBOSE_LOGS=false` (default), the existing minimal console
 logging remains and no log directory is created. The file budget does not cover nginx
-or system logs. For `new Server({ verboseLogs: true, logger })`, records go to the
-provided callback; library users can supply the exported `RotatingFileLogger` and must
-close it after stopping the server. CLI file settings are applied by `npm start`.
+or system logs. File settings are read from the process environment.
 
 Read a live file with `tail -f /var/log/no-logic-game-server/server-*.jsonl`
 (restart tail after rotation to follow newly created files), or inspect a specific
@@ -347,29 +365,19 @@ Malformed settings fail startup. The endpoint must accept `POST` JSON
 Events include process start/stop; minute-level counts of connections,
 disconnections, room creation/deletion, game starts, authentication/protocol
 failures and rejected/limited traffic; current accounts, online players, rooms,
-pending connections, RSS/heap memory and uptime. A random process-session UUID
+pending connections, process RSS and uptime. A random process-session UUID
 changes after restart. No player names/IDs, IP addresses, room IDs, chats,
 credentials, gameplay or serialized payloads are sent, even in verbose-log mode.
-Internal errors include a fixed category and exception class plus file basenames
-and line numbers; arbitrary exception messages, directory paths and URLs are
-excluded. Local verbose logs keep their existing separate policy.
+Internal errors use fixed categories; arbitrary exception messages, paths and URLs
+are excluded. Local verbose logs keep their existing separate policy.
 
 The queue is memory-only, capped at 256 events/512 KiB (plus one in-flight batch).
 Old queued events are dropped on overflow; `telemetryDropped` exposes that loss.
 Failures use exponential retry backoff up to five minutes; retries preserve event
 IDs. Invalid/authentication-rejected batches are dropped. Error categories are
-coalesced for one minute. Shutdown flushes for at most one second. A fatal-exception
-monitor preserves Node's original crash behavior; fatal delivery is best effort
+coalesced for one minute. Shutdown flushes for at most one second. A panic handler terminates the process; fatal delivery is best effort
 and is not guaranteed before process exit. Telemetry is diagnostic, not a lossless
 audit log. The relay does not wait for telemetry while serving gameplay.
-
-For an embedded server, construct `Telemetry(telemetryFromEnv())`, pass
-`telemetry: (event, details) => telemetry.observe(event, details)` to `Server`, call
-`telemetry.start(() => server.stats())` after startup and `await telemetry.close()`
-after stopping. Diagnostic observer exceptions are isolated from the server. Raw
-diagnostic callback details can contain identifiers; only the provided
-`Telemetry` adapter's allowlist is safe to transmit. The existing logger is
-independent and retains its previous behavior.
 
 The receiving service controls retention, disk quota, report scheduling and SMTP
 or webhook delivery. Configure the recipient (for example `reports@example.com`) on

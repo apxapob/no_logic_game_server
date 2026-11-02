@@ -17,6 +17,7 @@ The former JavaScript process suite was consolidated into Rust integration tests
 | `push`, durable notifications, localization, provider failure/retry | `cases/push.rs` |
 | `logging`, dev-mode privacy, broken sink, CLI rotation | `cases/logging.rs`, `tools.rs` |
 | CLI config and SIGTERM | `config.rs`, `tools.rs` (SIGTERM on Unix, stdin stop on Windows) |
+| Optional UDP handshake, authentication, replay, room isolation and revocation | `udp.rs` |
 | Ten demo regressions | `browser/demo-cases.js`, executed by `browser.rs` in Edge/Chrome |
 
 The browser cases retain the same fake clocks, frame inputs and assertions; a

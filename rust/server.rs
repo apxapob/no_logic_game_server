@@ -11,6 +11,9 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
 pub struct Connection {
+    pub udp: Option<crate::udp::Session>,
+    pub udp_incoming_rate: crate::udp::Rate,
+    pub udp_outgoing_rate: crate::udp::Rate,
     pub tx: mpsc::UnboundedSender<Message>,
     pub queued: Arc<AtomicUsize>,
     pub player: Option<String>,
@@ -113,6 +116,9 @@ impl Server {
         self.connections.insert(
             cid,
             Connection {
+                udp: None,
+                udp_incoming_rate: crate::udp::Rate::default(),
+                udp_outgoing_rate: crate::udp::Rate::default(),
                 tx,
                 queued,
                 player: None,
@@ -398,6 +404,9 @@ impl Server {
         }
         if self.push {
             data["pushNotifications"] = json!(true)
+        }
+        if self.config.b("udpEnabled") {
+            data["udpRelay"] = json!({"version":1,"port":self.config.n("udpPort"),"maxDatagramBytes":crate::udp::MAX_PACKET});
         }
         self.send_c(cid, json!({"method":"onConnected","data":data}));
         if let Some(r) = self.players[&id]
@@ -874,6 +883,25 @@ impl Server {
         let m = v["method"].as_str().unwrap();
         let d = &v["data"];
         match m {
+            "openUdp" => {
+                if !self.config.b("udpEnabled") {
+                    self.err(p, "udp_disabled");
+                } else if self.players[p].room.is_none() {
+                    self.err(p, "no_room");
+                } else {
+                    let session = crate::udp::Session::new(self.players[p].version);
+                    use base64::Engine;
+                    let secret = base64::engine::general_purpose::STANDARD.encode(session.secret);
+                    self.connections.get_mut(&cid).unwrap().udp = Some(session);
+                    self.send_c(cid, json!({"method":"udpSession","data":{"connectionId":cid.to_string(),"secret":secret,"port":self.config.n("udpPort"),"version":1,"maxDatagramBytes":crate::udp::MAX_PACKET}}));
+                }
+                return Ok(());
+            }
+            "closeUdp" => {
+                self.connections.get_mut(&cid).unwrap().udp = None;
+                self.send_c(cid, json!({"method":"udpClosed","data":null}));
+                return Ok(());
+            }
             "Pong" => {
                 let c = self.connections.get_mut(&cid).unwrap();
                 if c.ping.is_some_and(|t| *d == json!(t)) {

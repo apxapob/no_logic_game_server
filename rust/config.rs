@@ -6,6 +6,7 @@ pub struct Config(pub Value);
 impl Config {
     pub fn load() -> Result<Self> {
         let mut v = json!({"host":"127.0.0.1","port":8080,"devMode":false,"sendDelayMs":0,
+            "udpEnabled":false,"udpHost":"127.0.0.1","udpPort":8080,
             "maxPayloadBytes":65536,"maxBufferedBytes":262144,"maxConnections":256,
             "maxConnectionsPerIp":32,"maxAccounts":1024,"maxRooms":128,"maxRoomPlayers":16,
             "maxMessagesPerSecond":120,"maxConnectionsPerMinute":60,"accountTtlMs":300000,
@@ -34,7 +35,7 @@ impl Config {
                         bail!("Invalid setting: {env_key}")
                     }
                     let n: u64 = s.parse()?;
-                    let max = if k == "port" {
+                    let max = if k == "port" || k == "udpPort" {
                         65535
                     } else if ["logMaxBytes", "logFileMaxBytes", "sessionMaxBytes"]
                         .contains(&k.as_str())
@@ -43,7 +44,7 @@ impl Config {
                     } else {
                         2147483647
                     };
-                    if n > max || (n == 0 && k != "port" && k != "sendDelayMs") {
+                    if n > max || (n == 0 && k != "port" && k != "udpPort" && k != "sendDelayMs") {
                         bail!("Invalid setting: {env_key}")
                     };
                     json!(n)
@@ -75,6 +76,7 @@ impl Config {
             }
         }
         if v["host"].as_str().unwrap().trim().is_empty()
+            || v["udpHost"].as_str().unwrap().trim().is_empty()
             || v["logDirectory"].as_str().unwrap().trim().is_empty()
         {
             bail!("Invalid server options")

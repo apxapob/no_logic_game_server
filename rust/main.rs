@@ -8,6 +8,7 @@ mod server;
 mod state;
 mod store;
 mod telemetry;
+mod udp;
 use admission::{Admission, Permit};
 use anyhow::Result;
 use config::Config;
@@ -257,7 +258,22 @@ async fn connection(
 async fn run() -> Result<()> {
     let cfg = Config::load()?;
     let telemetry = telemetry::Telemetry::new()?;
-    let server = Server::new(cfg.clone())?;
+    let udp_socket = if cfg.b("udpEnabled") {
+        let socket =
+            tokio::net::UdpSocket::bind((cfg.s("udpHost"), cfg.n("udpPort") as u16)).await?;
+        // A bounded allowance for Internet bursts; OS defaults can drop a burst
+        // well below the sustained packet-rate limit. Kernels may cap this hint.
+        let options = socket2::SockRef::from(&socket);
+        options.set_recv_buffer_size(1024 * 1024)?;
+        options.set_send_buffer_size(1024 * 1024)?;
+        Some(socket)
+    } else {
+        None
+    };
+    let mut server = Server::new(cfg.clone())?;
+    if let Some(socket) = &udp_socket {
+        server.config.0["udpPort"] = json!(socket.local_addr()?.port());
+    }
     let notice_wake = server.notice_wake.clone();
     let legacy_wake = server.legacy_wake.clone();
     let push_sender = if server.push {
@@ -282,6 +298,8 @@ async fn run() -> Result<()> {
         );
     }
     let (stop, mut stopped) = watch::channel(false);
+    let udp_task =
+        udp_socket.map(|socket| tokio::spawn(udp::run(socket, s.clone(), stopped.clone())));
     let admission = Arc::new(Mutex::new(Admission::default()));
     let ss = s.clone();
     let interval = cfg.n("maintenanceIntervalMs");
@@ -392,6 +410,10 @@ async fn run() -> Result<()> {
         }
     }
     drop(listener);
+    if let Some(task) = udp_task {
+        task.abort();
+        let _ = task.await;
+    }
     let _ = sweep.await;
     // Let an acknowledged push persist its delivery receipt before shutdown.
     // Slow providers/collectors still cannot hold the process indefinitely.

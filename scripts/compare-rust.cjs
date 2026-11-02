@@ -97,7 +97,7 @@ async function main() {
     const result = await measure(backend, bytes, round); results.push(result); console.log(JSON.stringify(result));
   }
   const report = { timestamp: new Date().toISOString(), platform: process.platform, arch: process.arch, cpu: require('node:os').cpus()[0]?.model, logicalCpus: require('node:os').cpus().length, node: process.version, methodology: `Separate server and load processes on one machine; 1s warmup; closed-loop ${pairs} independent 2-peer rooms; two relay hops per RTT; no storage, push or telemetry; alternating order. Process CPU/RSS via ${process.platform === 'win32' ? 'Get-Process' : '/proc'}. Loopback without TLS, not a capacity guarantee.`, results };
-  const output = process.env.COMPARE_OUTPUT || join(__dirname, '../docs/benchmarks/rust-comparison.json');
+  const output = process.env.COMPARE_OUTPUT || join(__dirname, '../test-results/rust-comparison.json');
   mkdirSync(dirname(output), { recursive: true });
   writeFileSync(output, JSON.stringify(report, null, 2) + '\n');
 }

@@ -118,6 +118,8 @@ push, verbose logging and telemetry are disabled equally for both servers.
 `COMPARE_SIZES` overrides frame sizes (comma-separated bytes). For comparisons of
 native variants, `COMPARE_NATIVE_BINARIES` accepts a JSON object mapping labels to
 absolute executable paths; `COMPARE_OUTPUT` overrides the output JSON path.
+New runs write to ignored `test-results/rust-comparison.json` by default; the
+committed benchmark reports below are historical measurements, not generated output.
 `COMPARE_PROTOCOL=json` exercises JSON relay instead; the default is `binary`.
 JSON sizes are approximate input targets (padding plus timestamp/envelope), whereas
 binary sizes specify the exact input frame length.

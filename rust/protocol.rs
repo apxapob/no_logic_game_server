@@ -153,6 +153,9 @@ pub fn validate(v: &Value, room_max: usize, accounts: usize) -> bool {
         integer(v) && v.as_f64().unwrap() >= 1.0 && v.as_f64().unwrap() <= room_max as f64
     };
     match v["method"].as_str().unwrap_or("") {
+        "getModerationTicket" => {
+            obj && uuid(&d["requestId"]) && uuid(&d["target"]) && uuid(&d["room"])
+        }
         "getSavedRooms" => obj && ids(&d["ids"], 20, false),
         "getSession" => obj && uuid(&d["requestId"]),
         "getSessionChunk" => {

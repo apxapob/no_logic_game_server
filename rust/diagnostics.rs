@@ -39,6 +39,8 @@ pub fn redact(v: &mut Value) {
                     "apikey",
                     "api_key",
                     "api-key",
+                    "signingkey",
+                    "ticket",
                 ]
                 .iter()
                 .any(|s| k.contains(s))

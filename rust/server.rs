@@ -1042,6 +1042,33 @@ impl Server {
                 self.send(p, json!({"method":"pushDeviceUpdated"}));
                 return Ok(());
             }
+            "getModerationTicket" => {
+                use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+                use hmac::{Hmac, Mac};
+                use sha2::Sha256;
+                let req = &d["requestId"];
+                let target = d["target"].as_str().unwrap();
+                let room_id = d["room"].as_str().unwrap();
+                let allowed = self.rooms.get(room_id).is_some_and(|r| {
+                    target != p
+                        && (r.owner == target
+                            || (r.players.contains(p) && r.players.contains(target)))
+                });
+                let key = self.config.s("moderationSigningKey");
+                if key.is_empty() || !allowed {
+                    self.reply(p, req, json!({"error":"moderation_unavailable"}));
+                    return Ok(());
+                }
+                let payload = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({
+                    "reporter":p,"target":target,"room":room_id,"expires":now()+300000,
+                    "purpose":"profile-report-v1"
+                }))?);
+                let mut mac = Hmac::<Sha256>::new_from_slice(key.as_bytes()).unwrap();
+                mac.update(payload.as_bytes());
+                let signature = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
+                self.reply(p, req, json!({"ticket":format!("{payload}.{signature}")}));
+                return Ok(());
+            }
             "createRoom" => {
                 if self.players[p].room.is_some() {
                     self.err(p, "in_other_room");
@@ -1438,6 +1465,52 @@ mod tests {
         c.0["maxBufferedBytes"] = json!(512);
         c.0["maxMessagesPerSecond"] = json!(20000);
         Server::new(c).unwrap()
+    }
+    #[test]
+    fn moderation_ticket_is_signed_scoped_and_requires_a_visible_other_player() {
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+        let mut s = server();
+        s.config.0["maxBufferedBytes"] = json!(8192);
+        let key = "test-signing-key-000000000000000001";
+        s.config.0["moderationSigningKey"] = json!(key);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (abort, _) = tokio::sync::watch::channel(false);
+        s.connected(1, tx, Arc::new(AtomicUsize::new(0)), abort);
+        let mut reporter = Player::new("Reporter".into());
+        reporter.connection = Some(1);
+        let p = reporter.id.clone();
+        s.players.insert(p.clone(), reporter);
+        let target = Player::new("Target".into()).id;
+        let room = Room::new("Room".into(), target.clone(), 4, Value::Null, Value::Null);
+        let room_id = room.id.clone();
+        s.rooms.insert(room_id.clone(), room);
+        let req = id();
+        let mut message = json!({"method":"getModerationTicket","data":{"requestId":req,"target":target,"room":room_id}});
+        s.handle(1, &p, &message).unwrap();
+        let response: Value =
+            serde_json::from_str(rx.try_recv().unwrap().to_text().unwrap()).unwrap();
+        let ticket = response["data"]["ticket"].as_str().unwrap();
+        let (payload, signature) = ticket.split_once('.').unwrap();
+        let mut mac = Hmac::<Sha256>::new_from_slice(key.as_bytes()).unwrap();
+        mac.update(payload.as_bytes());
+        mac.verify_slice(&URL_SAFE_NO_PAD.decode(signature).unwrap())
+            .unwrap();
+        let data: Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload).unwrap()).unwrap();
+        assert_eq!(data["reporter"], p);
+        assert_eq!(data["target"], target);
+        assert_eq!(data["room"], room_id);
+        assert_eq!(response["data"]["requestId"], req);
+        assert!(data["expires"].as_u64().unwrap() > now());
+        for denied_target in [p.clone(), id()] {
+            message["data"]["target"] = json!(denied_target);
+            s.handle(1, &p, &message).unwrap();
+            let denied: Value =
+                serde_json::from_str(rx.try_recv().unwrap().to_text().unwrap()).unwrap();
+            assert_eq!(denied["data"]["error"], "moderation_unavailable");
+        }
     }
     #[test]
     fn control_bytes_abort_without_queueing_the_fifth_reply() {

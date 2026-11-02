@@ -112,6 +112,17 @@ impl Config {
         {
             bail!("Invalid origins")
         }
+        let moderation_key = std::env::var("MODERATION_SIGNING_KEY").unwrap_or_default();
+        if !moderation_key.is_empty()
+            && (moderation_key.len() < 32
+                || moderation_key.len() > 128
+                || !moderation_key
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-'))
+        {
+            bail!("Invalid MODERATION_SIGNING_KEY")
+        }
+        v["moderationSigningKey"] = json!(moderation_key);
         Ok(Self(v))
     }
     pub fn n(&self, k: &str) -> usize {

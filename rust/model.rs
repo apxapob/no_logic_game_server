@@ -45,6 +45,7 @@ impl Player {
         json!({"playerId":self.id,"name":self.name,"rtt":self.rtt,"roomEntryTimestamp":self.entered})
     }
 }
+#[derive(Clone)]
 pub struct Upload {
     pub id: String,
     pub owner: String,
@@ -54,6 +55,7 @@ pub struct Upload {
     pub offset: usize,
     pub at: u64,
 }
+#[derive(Clone)]
 pub struct Room {
     pub id: String,
     pub name: String,

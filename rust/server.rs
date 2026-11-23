@@ -44,6 +44,8 @@ pub struct Server {
     pub connections: IndexMap<u64, Connection>,
     pub store: Store,
     pub delayed: Vec<Delayed>,
+    pub erasures: Option<mpsc::Sender<(u64, String)>>,
+    pub deleting: indexmap::IndexSet<String>,
     pub push: bool,
     pub pushes_in_flight: usize,
     pub legacy_pushes: Vec<crate::push::LegacyPush>,
@@ -91,6 +93,8 @@ impl Server {
             connections: IndexMap::new(),
             store,
             delayed: vec![],
+            erasures: None,
+            deleting: Default::default(),
             push: std::env::var("FCM_ENABLED").as_deref() == Ok("true"),
             pushes_in_flight: 0,
             legacy_pushes: vec![],
@@ -316,6 +320,128 @@ impl Server {
                 r.reservations.shift_remove(&id);
             }
         }
+    }
+    fn request_erasure(&mut self, cid: u64, d: &Value) -> Result<()> {
+        use subtle::ConstantTimeEq;
+        let Some(queue) = &self.erasures else {
+            self.error(cid, "unavailable");
+            return Ok(());
+        };
+        let id = d["playerId"].as_str().unwrap();
+        let Some(account) = self.store.account(id)? else {
+            // Account removal is the final durable write. A lost reply can be retried.
+            self.send_c(cid, json!({"method":"accountDeleted","data":id}));
+            self.close(cid, 1000, "Finished");
+            return Ok(());
+        };
+        if account.id != id
+            || !bool::from(
+                account
+                    .password
+                    .as_bytes()
+                    .ct_eq(d["password"].as_str().unwrap().as_bytes()),
+            )
+        {
+            self.error(cid, "wrong_password");
+            self.close(cid, 1008, "Authentication failed");
+        } else if self.deleting.contains(id) || queue.try_send((cid, id.to_owned())).is_err() {
+            self.error(cid, "busy");
+        } else {
+            self.deleting.insert(id.to_owned());
+        }
+        Ok(())
+    }
+
+    pub fn finish_erasure(&mut self, cid: u64, player: &str, collector_ok: bool) {
+        self.deleting.shift_remove(player);
+        if collector_ok && self.erase_player(player).is_ok() {
+            self.send_c(cid, json!({"method":"accountDeleted","data":player}));
+        } else {
+            self.error(cid, "erasure_failed");
+        }
+        self.close(cid, 1000, "Finished");
+    }
+
+    fn erase_player(&mut self, player: &str) -> Result<()> {
+        use anyhow::Context;
+        let account = self.store.account(player)?.context("missing account")?;
+        let mut ids = self.store.saved_rooms_for(player)?;
+        ids.extend(
+            self.rooms
+                .values()
+                .filter(|r| r.persistent && r.players.contains(player))
+                .map(|r| r.id.clone()),
+        );
+        for id in ids {
+            let mut room = if let Some(live) = self.rooms.get(&id) {
+                live.clone()
+            } else {
+                self.store.load(&id, true)?.context("missing shared save")?
+            };
+            crate::erasure::anonymize(&mut room, player, &account.name)?;
+            self.store.save(&room)?;
+            // Detach the old generation before a connected host can write its cached roster back.
+            self.rooms.shift_remove(&id);
+            for member in &room.active {
+                if let Some(p) = self.players.get_mut(member) {
+                    p.room = None;
+                    p.entered = None;
+                    p.version += 1;
+                }
+                self.send(member, json!({"method":"roomRosterChanged","data":id}));
+            }
+        }
+        // Notification files can outlive a quota-evicted save.
+        let jobs: Vec<_> = self
+            .store
+            .jobs
+            .iter()
+            .filter_map(|(id, existing)| {
+                let mut jobs = existing.clone();
+                for j in &mut jobs {
+                    if let Some(to) = j["to"].as_array_mut() {
+                        to.retain(|v| v != player);
+                    }
+                    if let Some(done) = j["done"].as_array_mut() {
+                        done.retain(|v| {
+                            v.as_str()
+                                .and_then(|k| k.split_once(':'))
+                                .is_none_or(|(p, _)| p != player)
+                        });
+                    }
+                }
+                jobs.retain(|j| j["to"].as_array().is_some_and(|to| !to.is_empty()));
+                (&jobs != existing).then(|| (id.clone(), jobs))
+            })
+            .collect();
+        for (id, jobs) in jobs {
+            self.store.set_jobs(&id, jobs)?;
+        }
+        if self.players.contains_key(player) {
+            // Waiting rooms can carry the creator's name even after host migration.
+            for room in self.rooms.values_mut() {
+                if room.owner == player
+                    || (room.active.contains(player) && room.name == account.name)
+                {
+                    room.name = "General".into();
+                }
+            }
+            self.leave(player, false)?;
+        }
+        self.store.delete_account(player)?;
+        let pending = self.legacy_pushes.len();
+        self.legacy_pushes.retain(|job| job.player != player);
+        self.pushes_in_flight = self
+            .pushes_in_flight
+            .saturating_sub(pending - self.legacy_pushes.len());
+        self.players.shift_remove(player);
+        for (id, c) in &self.connections {
+            if c.player.as_deref() == Some(player) {
+                self.send_c(*id, json!({"method":"accountDeleted","data":player}));
+                self.close(*id, 1008, "Account deleted");
+            }
+        }
+        Ok(())
     }
     fn auth(&mut self, cid: u64, d: &Value) -> Result<()> {
         use subtle::ConstantTimeEq;
@@ -626,7 +752,11 @@ impl Server {
             }
             let method = v["method"].as_str().unwrap();
             if player.is_none() {
-                if method == "authenticate" {
+                if method == "deleteAccount" {
+                    if self.request_erasure(cid, &v["data"]).is_err() {
+                        self.error(cid, "storage_error");
+                    }
+                } else if method == "authenticate" {
                     if self.auth(cid, &v["data"]).is_err() {
                         self.error(cid, "storage_error")
                     }
@@ -850,6 +980,12 @@ impl Server {
                 .is_some_and(|a| a.iter().any(|id| !r.players.contains(id.as_str().unwrap())))
         }) {
             self.reply(p, req, json!({"error":"invalid_message"}));
+            return Ok(());
+        }
+        if r.start["anonymizedRoster"] == true
+            && !crate::erasure::current_save(&r.upload.as_ref().unwrap().bytes, &r.start["key"])
+        {
+            self.reply(p, req, json!({"error":"stale_session"}));
             return Ok(());
         }
         if self

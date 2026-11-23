@@ -316,3 +316,55 @@ async fn offline_ttl_subsets_and_expired_credentials() -> Result<()> {
     expired.closed().await?;
     Ok(())
 }
+
+#[tokio::test]
+async fn account_erasure_requires_ownership_and_a_collector_acknowledgement() -> Result<()> {
+    let collector = MockPush::start(|request, attempt| {
+        if attempt == 1 {
+            (503, json!({}))
+        } else {
+            (200, json!({"erased":request["player"]}))
+        }
+    })
+    .await?;
+    let dir = Temp::new();
+    let relay = Relay::start(json!({"sessionDirectory":dir.0,"moderationSigningKey":"test-server-signing-key-0000000000001",
+        "generalErasureUrl":format!("{}/internal/general/erase",collector.url)})).await?;
+    let mut player = Client::connect(&relay.url).await?;
+    let credentials = json!({"playerId":player.id(),"password":player.account["password"]});
+    let mut request = Client::raw(&relay.url, None).await?;
+    request
+        .error(
+            "deleteAccount",
+            json!({"playerId":player.id(),"password":"wrong"}),
+            "wrong_password",
+        )
+        .await?;
+    let mut request = Client::raw(&relay.url, None).await?;
+    request
+        .error("deleteAccount", credentials.clone(), "erasure_failed")
+        .await?;
+    assert!(
+        dir.0
+            .join("accounts")
+            .join(format!("{}.json", player.id()))
+            .is_file()
+    );
+    for _ in 0..2 {
+        let mut request = Client::raw(&relay.url, None).await?;
+        request.send("deleteAccount", credentials.clone())?;
+        assert_eq!(request.wait("accountDeleted").await?, player.id());
+    }
+    assert_eq!(player.wait("accountDeleted").await?, player.id());
+    assert!(
+        !dir.0
+            .join("accounts")
+            .join(format!("{}.json", player.id()))
+            .exists()
+    );
+    assert_eq!(collector.wait(2).await?.len(), 2);
+    let mut stale = Client::raw(&relay.url, None).await?;
+    stale.send("authenticate", credentials)?;
+    stale.wait("wrongPassword").await?;
+    Ok(())
+}

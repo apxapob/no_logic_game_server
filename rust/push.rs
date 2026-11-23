@@ -154,13 +154,17 @@ impl Sender {
                     {
                         continue;
                     }
-                    let (check_room, check_job) = (room.clone(), job.clone());
+                    let (check_room, check_job, recipient) =
+                        (room.clone(), job.clone(), id.to_owned());
                     let still_current = state
                         .query(move |s| {
                             s.store.jobs.get(&check_room).is_some_and(|a| {
                                 a.iter().any(|j| {
                                     j["eventId"] == check_job["eventId"]
                                         && j["at"] == check_job["at"]
+                                        && j["to"]
+                                            .as_array()
+                                            .is_some_and(|to| to.contains(&json!(recipient)))
                                 })
                             })
                         })
@@ -219,7 +223,11 @@ impl Sender {
                             }
                             if let Some(j) = s.store.jobs.get_mut(&room).and_then(|a| {
                                 a.iter_mut().find(|j| {
-                                    j["eventId"] == job["eventId"] && j["at"] == job["at"]
+                                    j["eventId"] == job["eventId"]
+                                        && j["at"] == job["at"]
+                                        && j["to"]
+                                            .as_array()
+                                            .is_some_and(|to| to.contains(&json!(id)))
                                 })
                             }) && let Some(done) = j["done"].as_array_mut()
                             {

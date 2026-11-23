@@ -261,3 +261,9 @@ Verify both `/healthz` and `/telemetry/healthz`, a test event for each configure
 project, rejected wrong keys, and WebSocket connection/authentication after the
 proxy reload. Missing SMTP credentials must not prevent ingest or bounded local
 report generation; only enable SMTP delivery once the provider is configured.
+
+### General account deletion
+
+On the General relay, set `GENERAL_ERASURE_URL=http://127.0.0.1:8787/internal/general/erase` to the local project-telemetry listener. Both services must have the same General moderation signing key and the relay must have persistent sessions enabled. Include `tauri://localhost` in `ALLOWED_ORIGINS` for the iOS webview.
+
+A fresh WebSocket accepts `deleteAccount` with the existing `playerId` and `password`. On success it sends `accountDeleted` with the player ID, then closes. The client can repeat the request after losing the acknowledgement. The relay removes account-linked moderation evidence before anonymizing General saves and removing the credentials and push registrations. A failed cleanup returns an error and retains the credentials for retry. Other active participants reload the saved roster after `roomRosterChanged`.

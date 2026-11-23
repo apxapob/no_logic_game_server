@@ -1,6 +1,7 @@
 mod admission;
 mod config;
 mod diagnostics;
+mod erasure;
 mod model;
 mod protocol;
 mod push;
@@ -281,7 +282,55 @@ async fn run() -> Result<()> {
     } else {
         None
     };
+    // This route is internal to the General VPS. No game secret is sent to a client.
+    let erasure_worker = if let Ok(url) = std::env::var("GENERAL_ERASURE_URL") {
+        let url = reqwest::Url::parse(&url)?;
+        anyhow::ensure!(
+            url.scheme() == "http"
+                && matches!(url.host_str(), Some("127.0.0.1" | "[::1]"))
+                && url.path() == "/internal/general/erase"
+                && url.query().is_none()
+                && url.fragment().is_none()
+                && url.username().is_empty()
+                && url.password().is_none()
+                && !cfg.s("moderationSigningKey").is_empty()
+                && server.store.enabled,
+            "invalid erasure configuration"
+        );
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(4))
+            .build()?;
+        let (tx, rx) = mpsc::channel(16);
+        server.erasures = Some(tx);
+        Some((client, url, rx, cfg.s("moderationSigningKey").to_owned()))
+    } else {
+        None
+    };
     let s = Shared::new(server);
+    if let Some((client, url, mut rx, key)) = erasure_worker {
+        let state = s.clone();
+        tokio::spawn(async move {
+            while let Some((cid, player)) = rx.recv().await {
+                let response = client
+                    .post(url.clone())
+                    .bearer_auth(&key)
+                    .json(&json!({"player":player}))
+                    .send()
+                    .await;
+                let ok = match response {
+                    Ok(r) if r.status().is_success() => {
+                        r.json::<Value>().await.is_ok_and(|v| v["erased"] == player)
+                    }
+                    _ => false,
+                };
+                state
+                    .apply(move |s| s.finish_erasure(cid, &player, ok))
+                    .await;
+            }
+        });
+    }
     let listener = TcpListener::bind((cfg.s("host"), cfg.n("port") as u16)).await?;
     let address = listener.local_addr()?;
     LISTENING.store(true, Ordering::Relaxed);

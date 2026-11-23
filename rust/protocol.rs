@@ -153,6 +153,11 @@ pub fn validate(v: &Value, room_max: usize, accounts: usize) -> bool {
         integer(v) && v.as_f64().unwrap() >= 1.0 && v.as_f64().unwrap() <= room_max as f64
     };
     match v["method"].as_str().unwrap_or("") {
+        "deleteAccount" => {
+            d.as_object().is_some_and(|o| o.len() == 2)
+                && uuid(&d["playerId"])
+                && string(&d["password"], 1, 128, false)
+        }
         "getModerationTicket" => {
             obj && uuid(&d["requestId"]) && uuid(&d["target"]) && uuid(&d["room"])
         }

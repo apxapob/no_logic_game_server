@@ -114,7 +114,7 @@ impl Store {
             return Ok(None);
         }
         let path = self.path("accounts", id)?;
-        if !path.exists() {
+        if !path.try_exists()? {
             return Ok(None);
         }
         let v: Value = serde_json::from_slice(&fs::read(path)?)?;
@@ -128,6 +128,25 @@ impl Store {
         }
         Ok(Some(p))
     }
+    pub fn saved_rooms_for(&self, player: &str) -> Result<IndexSet<String>> {
+        let mut rooms = IndexSet::new();
+        for entry in fs::read_dir(self.directory.join("rooms"))? {
+            let path = entry?.path();
+            if path.extension().is_some_and(|e| e == "bin")
+                && let Some(id) = path.file_stem().and_then(|s| s.to_str())
+                && let Some(room) = self.load(id, false)?
+                && room.players.contains(player)
+            {
+                rooms.insert(id.to_owned());
+            }
+        }
+        Ok(rooms)
+    }
+
+    pub fn delete_account(&self, player: &str) -> Result<()> {
+        fs::remove_file(self.path("accounts", player)?)?;
+        Ok(())
+    }
     pub fn save(&self, r: &Room) -> Result<()> {
         let h = serde_json::to_vec(&r.header())?;
         self.atomic(
@@ -140,7 +159,7 @@ impl Store {
             return Ok(None);
         }
         let path = self.path("rooms", id)?;
-        if !path.exists() {
+        if !path.try_exists()? {
             return Ok(None);
         }
         let mut f = File::open(path)?;

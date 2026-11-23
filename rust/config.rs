@@ -108,7 +108,7 @@ impl Config {
             .as_array()
             .unwrap()
             .iter()
-            .any(|s| !re.is_match(s.as_str().unwrap()))
+            .any(|s| s != "tauri://localhost" && !re.is_match(s.as_str().unwrap()))
         {
             bail!("Invalid origins")
         }
